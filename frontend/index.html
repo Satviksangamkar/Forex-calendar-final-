@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Forex Economic Calendar</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Header Section -->
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <h1 class="header-title">Forex Economic Calendar</h1>
+                
+                <div class="header-controls">
+                    <div class="date-controls">
+                        <div class="form-group">
+                            <label for="startDate" class="form-label">Start Date</label>
+                            <input type="date" id="startDate" class="form-control date-input">
+                        </div>
+                        <div class="form-group">
+                            <label for="endDate" class="form-label">End Date</label>
+                            <input type="date" id="endDate" class="form-control date-input">
+                        </div>
+                    </div>
+                    
+                    <div class="toggle-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="dataToggle" class="toggle-input">
+                            <span class="toggle-slider"></span>
+                            <span class="toggle-text">Paraphrased Data</span>
+                        </label>
+                    </div>
+                    
+                    <button id="loadEvents" class="btn btn--primary">Load Events</button>
+                    <button id="testConnection" class="btn btn--secondary">Test Connection</button>
+                    
+                    <div class="status-indicator">
+                        <span id="statusDot" class="status-dot status-dot--unknown"></span>
+                        <span id="statusText" class="status-text">Checking...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main">
+        <div class="container">
+            <!-- Search and Filters -->
+            <div class="search-section">
+                <div class="search-controls">
+                    <input type="text" id="searchInput" class="form-control search-input" placeholder="Search events by currency or keyword...">
+                    <select id="currencyFilter" class="form-control currency-filter">
+                        <option value="">All Currencies</option>
+                        <option value="USD">USD</option>
+                        <option value="EUR">EUR</option>
+                        <option value="GBP">GBP</option>
+                        <option value="JPY">JPY</option>
+                        <option value="CHF">CHF</option>
+                        <option value="CAD">CAD</option>
+                        <option value="AUD">AUD</option>
+                        <option value="NZD">NZD</option>
+                    </select>
+                    <button id="exportBtn" class="btn btn--outline">Export CSV</button>
+                </div>
+            </div>
+
+            <!-- Loading State -->
+            <div id="loadingState" class="loading-state hidden">
+                <div class="loading-spinner"></div>
+                <p>Loading economic events...</p>
+            </div>
+
+            <!-- Error State -->
+            <div id="errorState" class="error-state hidden">
+                <div class="error-icon">⚠️</div>
+                <h3>Error Loading Events</h3>
+                <p id="errorMessage">Unable to connect to the backend server.</p>
+                <button id="retryBtn" class="btn btn--primary">Retry</button>
+            </div>
+
+            <!-- Empty State -->
+            <div id="emptyState" class="empty-state hidden">
+                <div class="empty-icon">📅</div>
+                <h3>No Events Found</h3>
+                <p>No economic events found for the selected date range.</p>
+            </div>
+
+            <!-- Events Table -->
+            <div id="eventsSection" class="events-section">
+                <div class="table-container">
+                    <table id="eventsTable" class="events-table">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Currency</th>
+                                <th>Impact</th>
+                                <th>Event</th>
+                                <th>Actual</th>
+                                <th>Forecast</th>
+                                <th>Previous</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody id="eventsTableBody">
+                            <!-- Events will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Database Management Section -->
+            <div class="database-section">
+                <div class="card">
+                    <div class="card__header">
+                        <h3>Database Management</h3>
+                    </div>
+                    <div class="card__body">
+                        <div class="db-stats">
+                            <div class="stat-item">
+                                <span class="stat-label">Total Records:</span>
+                                <span id="totalRecords" class="stat-value">-</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Date Range:</span>
+                                <span id="dateRange" class="stat-value">-</span>
+                            </div>
+                        </div>
+                        <div class="db-actions">
+                            <button id="refreshStatsBtn" class="btn btn--secondary">Refresh Stats</button>
+                            <button id="deleteRangeBtn" class="btn btn--outline" style="color: var(--color-error); border-color: var(--color-error);">Delete Range</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Event Details Modal -->
+    <div id="eventModal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="modalTitle" class="modal-title">Event Details</h3>
+                    <button id="closeModal" class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body" id="modalBody">
+                    <!-- Event details will be populated here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="notification" class="notification hidden">
+        <div class="notification-content">
+            <span id="notificationMessage"></span>
+            <button id="closeNotification" class="notification-close">&times;</button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

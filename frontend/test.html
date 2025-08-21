@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frontend Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+        button { padding: 10px 20px; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Frontend Backend Connection Test</h1>
+    
+    <div id="status" class="status">Testing connection...</div>
+    
+    <button onclick="testHealth()">Test Health Endpoint</button>
+    <button onclick="testEvents()">Test Events Endpoint</button>
+    <button onclick="testCORS()">Test CORS</button>
+    
+    <div id="results"></div>
+
+    <script>
+        const baseUrl = 'http://localhost:8000';
+        
+        async function testHealth() {
+            try {
+                const response = await fetch(`${baseUrl}/health`);
+                const data = await response.json();
+                showResult('Health Test', 'success', `Status: ${data.status}, Redis: ${data.redis}`);
+            } catch (error) {
+                showResult('Health Test', 'error', `Error: ${error.message}`);
+            }
+        }
+        
+        async function testEvents() {
+            try {
+                const today = new Date().toISOString().split('T')[0];
+                const response = await fetch(`${baseUrl}/events?start=${today}&end=${today}`);
+                const data = await response.json();
+                showResult('Events Test', 'success', `Events loaded: ${data.total_events}, Source: ${data.source}`);
+            } catch (error) {
+                showResult('Events Test', 'error', `Error: ${error.message}`);
+            }
+        }
+        
+        async function testCORS() {
+            try {
+                const response = await fetch(`${baseUrl}/health`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                });
+                showResult('CORS Test', 'success', `CORS headers present: ${response.headers.get('access-control-allow-origin')}`);
+            } catch (error) {
+                showResult('CORS Test', 'error', `CORS Error: ${error.message}`);
+            }
+        }
+        
+        function showResult(testName, type, message) {
+            const results = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.innerHTML = `<strong>${testName}:</strong> ${message}`;
+            results.appendChild(div);
+        }
+        
+        // Auto-test on load
+        window.onload = function() {
+            testHealth();
+        };
+    </script>
+</body>
+</html>
