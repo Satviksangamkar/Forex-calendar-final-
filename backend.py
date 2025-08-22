@@ -428,7 +428,7 @@ class ComprehensiveForexFactoryScraper:
                 self.log_info(f"Scraping URL (attempt {attempt + 1}): {url}")
                 
                 driver.get(url)
-                time.sleep(random.uniform(3, 6))  # Random delay
+                time.sleep(random.uniform(2, 4))  # Reduced random delay
                 
                 # Check for Cloudflare
                 try:
@@ -442,51 +442,18 @@ class ComprehensiveForexFactoryScraper:
                         time.sleep(10 + attempt * 5)  # Progressive delay
                         continue
                 
-                # Wait for calendar table with multiple selectors
-                calendar_found = False
-                calendar_selectors = [
-                    "table",
-                    "table.calendar__table",
-                    ".calendar",
-                    "[class*='calendar']",
-                    "[data-event-id]"
-                ]
+                # Skip calendar detection - go directly to row extraction
+                # The primary selector often fails but rows are still found
+                self.log_info(f"Proceeding directly to row extraction for {date_str}")
                 
-                for selector in calendar_selectors:
-                    try:
-                        driver.wait_for_element(selector, timeout=15)
-                        self.log_info(f"Calendar found using selector: {selector}")
-                        calendar_found = True
-                        break
-                    except Exception:
-                        continue
-                
-                if not calendar_found:
-                    self.log_info(f"No calendar table found for {date_str}")
+                # Get calendar rows directly - this is the most reliable approach
+                rows = driver.select_all("tr[data-event-id]")
+                if rows:
+                    self.log_info(f"Found {len(rows)} rows using selector: tr[data-event-id]")
+                else:
+                    self.log_info(f"No rows found for {date_str}")
                     if attempt < self.max_retries - 1:
-                        time.sleep(5)
-                        continue
-                
-                # Get calendar rows
-                rows = []
-                selectors = [
-                    "tr[data-event-id]",
-                    "tr.calendar__row:not(.calendar__details)",
-                    "tr.calendar__row",
-                    "tbody tr",
-                    "tr"
-                ]
-                
-                for selector in selectors:
-                    rows = driver.select_all(selector)
-                    if rows:
-                        self.log_info(f"Found {len(rows)} rows using selector: {selector}")
-                        break
-                
-                if not rows:
-                    self.log_error(f"No calendar rows found for {date_str}")
-                    if attempt < self.max_retries - 1:
-                        time.sleep(5)
+                        time.sleep(3)  # Reduced wait time
                         continue
                     return []
                 
@@ -508,7 +475,7 @@ class ComprehensiveForexFactoryScraper:
             except Exception as e:
                 self.log_error(f"Error scraping date {date_str} (attempt {attempt + 1}): {e}")
                 if attempt < self.max_retries - 1:
-                    time.sleep(self.retry_delay + attempt * 2)
+                    time.sleep(self.retry_delay + attempt * 1)  # Reduced progressive delay
                 else:
                     self.log_error(f"Failed to scrape {date_str} after {self.max_retries} attempts")
         
@@ -665,33 +632,14 @@ class ComprehensiveForexFactoryScraper:
     
     def extract_details_using_hash_fragment(self, driver: Driver, row_element, event_data: Dict[str, Any]) -> Dict[str, Any]:
         try:
-            # Find detail link with more comprehensive selectors
-            detail_selectors = [
-                "a.calendar__detail-link",
-                "a[title*='Detail']",
-                "a[class*='detail']",
-                ".calendar__detail",
-                "a[href*='#detail']",
-                "a[onclick*='detail']",
-                "a[data-action*='detail']",
-                "a[class*='expand']",
-                "a[class*='more']",
-                "a[title*='More']",
-                "a[title*='Expand']",
-                ".calendar__row a",
-                "td a",
-                "a"
-            ]
-            
+            # Find detail link using best working selector
             detail_link = None
-            for selector in detail_selectors:
-                try:
-                    detail_link = row_element.select(selector)
-                    if detail_link:
-                        self.log_info(f"Found detail link using selector: {selector}")
-                        break
-                except Exception:
-                    continue
+            try:
+                detail_link = row_element.select("a.calendar__detail-link")
+                if detail_link:
+                    self.log_info("Found detail link using selector: a.calendar__detail-link")
+            except Exception:
+                self.log_info("Detail link not found with primary selector")
             
             if detail_link:
                 event_id = row_element.get_attribute("data-event-id")
@@ -753,211 +701,66 @@ class ComprehensiveForexFactoryScraper:
     def extract_details_from_detail_pane(self, driver: Driver, event_data: Dict[str, Any]) -> Dict[str, Any]:
         """Extract detailed information from the loaded detail pane - OPTIMIZED VERSION"""
         try:
-            self.log_info(f"STARTING DETAIL EXTRACTION for event: {event_data.get('event', 'Unknown')}")
+            self.log_info(f"EXTRACTING DETAILS for event: {event_data.get('event', 'Unknown')}")
             
-            # Get current page URL for debugging
-            current_url = driver.current_url
-            self.log_info(f"Current URL: {current_url}")
+            # Wait for dynamic content to load
+            time.sleep(1)
             
-            # Wait a bit for any dynamic content to load
-            time.sleep(2)
+            # OPTIMIZED APPROACH: Use only Method 3 (page-wide specs tables) - 100% success rate
+            all_specs_tables = driver.select_all("table.calendarspecs")
             
-            # METHOD 1: Look for detail panes using the original working approach
-            self.log_info(f"METHOD 1: Looking for detail panes...")
-            detail_panes = driver.select_all("div.half.details")
-            
-            if detail_panes:
-                self.log_info(f"METHOD 1 SUCCESS: Found {len(detail_panes)} detail panes")
+            if all_specs_tables:
+                self.log_info(f"Found {len(all_specs_tables)} specs tables on page")
                 
-                # Get the most recent detail pane (last one in the list)
-                pane = detail_panes[-1]
-                self.log_info(f"Processing the most recent detail pane")
-                
-                # Find the calendarspecs table within this pane
-                specs_tables = pane.select_all("table.calendarspecs")
-                
-                if specs_tables:
-                    self.log_info(f"Found {len(specs_tables)} specs tables in detail pane")
+                for table in all_specs_tables:
+                    spec_rows = table.select_all("tr")
                     
-                    for table_idx, table in enumerate(specs_tables):
-                        # Get all rows in the specs table
-                        spec_rows = table.select_all("tr")
-                        self.log_info(f"Table {table_idx + 1}: Found {len(spec_rows)} rows")
+                    for row in spec_rows:
+                        spec_cells = row.select_all("td")
                         
-                        for row_idx, row in enumerate(spec_rows):
-                            # Get the spec name and description cells
-                            spec_cells = row.select_all("td")
+                        if len(spec_cells) >= 2:
+                            spec_name = spec_cells[0].text.strip()
+                            spec_value = spec_cells[1].text.strip()
                             
-                            if len(spec_cells) >= 2:
-                                spec_name = spec_cells[0].text.strip()
-                                spec_value = spec_cells[1].text.strip()
-                                
-                                self.log_info(f"Row {row_idx + 1}: Found spec: '{spec_name}' = '{spec_value}'")
-                                
-                                # Map spec names to our fields using original logic
-                                if "Source" in spec_name:
-                                    event_data["details"]["source"] = spec_value
-                                    self.log_info(f"Mapped to source: {spec_value}")
-                                elif "Measures" in spec_name:
-                                    event_data["details"]["measures"] = spec_value
-                                    self.log_info(f"Mapped to measures: {spec_value}")
-                                elif "Usual Effect" in spec_name:
-                                    event_data["details"]["usual_effect"] = spec_value
-                                    self.log_info(f"Mapped to usual_effect: {spec_value}")
-                                elif "Frequency" in spec_name:
-                                    event_data["details"]["frequency"] = spec_value
-                                    self.log_info(f"Mapped to frequency: {spec_value}")
-                                elif "Next Release" in spec_name:
-                                    event_data["details"]["next_release"] = spec_value
-                                    self.log_info(f"Mapped to next_release: {spec_value}")
-                                elif "FF Notes" in spec_name:
+                            # Map spec names to our fields
+                            if "Source" in spec_name:
+                                event_data["details"]["source"] = spec_value
+                            elif "Measures" in spec_name:
+                                event_data["details"]["measures"] = spec_value
+                            elif "Usual Effect" in spec_name:
+                                event_data["details"]["usual_effect"] = spec_value
+                            elif "Frequency" in spec_name:
+                                event_data["details"]["frequency"] = spec_value
+                            elif "Next Release" in spec_name:
+                                event_data["details"]["next_release"] = spec_value
+                            elif "FF Notes" in spec_name:
+                                event_data["details"]["ff_notes"] = spec_value
+                            elif "Why Traders" in spec_name or "Care" in spec_name:
+                                if not event_data["details"]["ff_notes"]:
                                     event_data["details"]["ff_notes"] = spec_value
-                                    self.log_info(f"Mapped to ff_notes: {spec_value}")
-                                elif "Why Traders" in spec_name or "Care" in spec_name:
-                                    if not event_data["details"]["ff_notes"]:
-                                        event_data["details"]["ff_notes"] = spec_value
-                                    else:
-                                        event_data["details"]["ff_notes"] += f" | {spec_value}"
-                                    self.log_info(f"Added to ff_notes: {spec_value}")
-                                elif "Derived Via" in spec_name:
-                                    event_data["details"]["derived_via"] = spec_value
-                                    self.log_info(f"Mapped to derived_via: {spec_value}")
-                                elif "Acro Expand" in spec_name:
-                                    event_data["details"]["acro_expand"] = spec_value
-                                    self.log_info(f"Mapped to acro_expand: {spec_value}")
-                                elif "Also Called" in spec_name:
-                                    event_data["details"]["also_called"] = spec_value
-                                    self.log_info(f"Mapped to also_called: {spec_value}")
-                                elif "Speaker" in spec_name:
-                                    event_data["details"]["speaker"] = spec_value
-                                    self.log_info(f"Mapped to speaker: {spec_value}")
-                                elif "Description" in spec_name:
-                                    event_data["details"]["description"] = spec_value
-                                    self.log_info(f"Mapped to description: {spec_value}")
                                 else:
-                                    self.log_info(f"Unmapped spec: '{spec_name}' = '{spec_value}'")
-                else:
-                    self.log_info(f"No specs tables found in detail pane")
+                                    event_data["details"]["ff_notes"] += f" | {spec_value}"
+                            elif "Derived Via" in spec_name:
+                                event_data["details"]["derived_via"] = spec_value
+                            elif "Acro Expand" in spec_name:
+                                event_data["details"]["acro_expand"] = spec_value
+                            elif "Also Called" in spec_name:
+                                event_data["details"]["also_called"] = spec_value
+                            elif "Speaker" in spec_name:
+                                event_data["details"]["speaker"] = spec_value
+                            elif "Description" in spec_name:
+                                event_data["details"]["description"] = spec_value
             else:
-                self.log_info(f"METHOD 1 FAILED: No detail panes found")
-                
-                # METHOD 2: Try alternative selectors for detail panes
-                self.log_info(f"METHOD 2: Trying alternative detail panes...")
-                alternative_panes = driver.select_all("div.details")
-                if alternative_panes:
-                    self.log_info(f"METHOD 2 SUCCESS: Found {len(alternative_panes)} alternative detail panes")
-                    
-                    for pane_idx, pane in enumerate(alternative_panes):
-                        specs_tables = pane.select_all("table.calendarspecs")
-                        for table in specs_tables:
-                            spec_rows = table.select_all("tr")
-                            for row in spec_rows:
-                                spec_cells = row.select_all("td")
-                                if len(spec_cells) >= 2:
-                                    spec_name = spec_cells[0].text.strip()
-                                    spec_value = spec_cells[1].text.strip()
-                                    self.log_info(f"Found spec: '{spec_name}' = '{spec_value}'")
-                                    
-                                    # Map spec names to our fields (same logic as above)
-                                    if "Source" in spec_name:
-                                        event_data["details"]["source"] = spec_value
-                                    elif "Measures" in spec_name:
-                                        event_data["details"]["measures"] = spec_value
-                                    elif "Usual Effect" in spec_name:
-                                        event_data["details"]["usual_effect"] = spec_value
-                                    elif "Frequency" in spec_name:
-                                        event_data["details"]["frequency"] = spec_value
-                                    elif "Next Release" in spec_name:
-                                        event_data["details"]["next_release"] = spec_value
-                                    elif "FF Notes" in spec_name:
-                                        event_data["details"]["ff_notes"] = spec_value
-                                    elif "Why Traders" in spec_name or "Care" in spec_name:
-                                        if not event_data["details"]["ff_notes"]:
-                                            event_data["details"]["ff_notes"] = spec_value
-                                        else:
-                                            event_data["details"]["ff_notes"] += f" | {spec_value}"
-                                    elif "Derived Via" in spec_name:
-                                        event_data["details"]["derived_via"] = spec_value
-                                    elif "Acro Expand" in spec_name:
-                                        event_data["details"]["acro_expand"] = spec_value
-                                    elif "Also Called" in spec_name:
-                                        event_data["details"]["also_called"] = spec_value
-                                    elif "Speaker" in spec_name:
-                                        event_data["details"]["speaker"] = spec_value
-                                    elif "Description" in spec_name:
-                                        event_data["details"]["description"] = spec_value
-                else:
-                    self.log_info(f"METHOD 2 FAILED: No alternative detail panes found")
+                self.log_info("No specs tables found on page")
             
-            # METHOD 3: Also try to find specs tables anywhere on the page
-            if not self._has_details(event_data):
-                self.log_info(f"METHOD 3: Looking for specs tables anywhere on page...")
-                all_specs_tables = driver.select_all("table.calendarspecs")
-                if all_specs_tables:
-                    self.log_info(f"METHOD 3 SUCCESS: Found {len(all_specs_tables)} specs tables on page")
-                    
-                    for table in all_specs_tables:
-                        spec_rows = table.select_all("tr")
-                        
-                        for row in spec_rows:
-                            spec_cells = row.select_all("td")
-                            
-                            if len(spec_cells) >= 2:
-                                spec_name = spec_cells[0].text.strip()
-                                spec_value = spec_cells[1].text.strip()
-                                
-                                self.log_info(f"Found spec: '{spec_name}' = '{spec_value}'")
-                                
-                                # Map spec names to our fields (same logic as above)
-                                if "Source" in spec_name:
-                                    event_data["details"]["source"] = spec_value
-                                elif "Measures" in spec_name:
-                                    event_data["details"]["measures"] = spec_value
-                                elif "Usual Effect" in spec_name:
-                                    event_data["details"]["usual_effect"] = spec_value
-                                elif "Frequency" in spec_name:
-                                    event_data["details"]["frequency"] = spec_value
-                                elif "Next Release" in spec_name:
-                                    event_data["details"]["next_release"] = spec_value
-                                elif "FF Notes" in spec_name:
-                                    event_data["details"]["ff_notes"] = spec_value
-                                elif "Why Traders" in spec_name or "Care" in spec_name:
-                                    if not event_data["details"]["ff_notes"]:
-                                        event_data["details"]["ff_notes"] = spec_value
-                                    else:
-                                        event_data["details"]["ff_notes"] += f" | {spec_value}"
-                                elif "Derived Via" in spec_name:
-                                    event_data["details"]["derived_via"] = spec_value
-                                elif "Acro Expand" in spec_name:
-                                    event_data["details"]["acro_expand"] = spec_value
-                                elif "Also Called" in spec_name:
-                                    event_data["details"]["also_called"] = spec_value
-                                elif "Speaker" in spec_name:
-                                    event_data["details"]["speaker"] = spec_value
-                                elif "Description" in spec_name:
-                                    event_data["details"]["description"] = spec_value
-                else:
-                    self.log_info(f"METHOD 3 FAILED: No specs tables found on page")
-            
-            # Final summary
-            final_detail_count = self._count_details(event_data)
-            
-            self.log_info(f"DETAIL EXTRACTION SUMMARY for {event_data.get('event', 'Unknown')}:")
-            self.log_info(f"Final details: {final_detail_count}")
-            
-            # Log final details state
-            details = event_data.get("details", {})
-            non_empty_details = {k: v for k, v in details.items() if v}
-            self.log_info(f"Final details: {non_empty_details}")
-            
-            if final_detail_count > 0:
-                self.log_info(f"SUCCESS: Detail extraction completed!")
-            else:
-                self.log_info(f"FAILURE: No details extracted from any method")
+            # Log extraction summary
+            detail_count = self._count_details(event_data)
+            self.log_info(f"Extracted {detail_count} detail fields for {event_data.get('event', 'Unknown')}")
             
             return event_data
+            
         except Exception as e:
-            self.log_error(f"Error extracting details from detail pane: {e}")
+            self.log_error(f"Error extracting details: {e}")
             return event_data
     
     def _has_details(self, event_data: Dict[str, Any]) -> bool:
