@@ -399,10 +399,9 @@ class RedisDatabase:
             logger.error(f"Error getting Redis stats: {e}")
             return {}
 
-# Optimized Forex Factory Scraper
+# Ultra-Optimized Forex Factory Scraper
 class ComprehensiveForexFactoryScraper:
     def __init__(self):
-        self.results = []
         self.max_retries = 3
         self.retry_delay = 5
     
@@ -428,61 +427,57 @@ class ComprehensiveForexFactoryScraper:
                 self.log_info(f"Scraping URL (attempt {attempt + 1}): {url}")
                 
                 driver.get(url)
-                time.sleep(random.uniform(2, 4))  # Reduced random delay
+                time.sleep(random.uniform(2, 4))
                 
                 # Check for Cloudflare
                 try:
                     page_text = driver.get_text("body")
+                    if "Just a moment" in page_text or "Checking your browser" in page_text:
+                        self.log_error(f"Cloudflare protection detected for {date_str}")
+                        if attempt < self.max_retries - 1:
+                            time.sleep(10 + attempt * 5)
+                            continue
                 except Exception:
-                    page_text = ""
+                    pass
                 
-                if "Just a moment" in page_text or "Checking your browser" in page_text:
-                    self.log_error(f"Cloudflare protection detected for {date_str}")
-                    if attempt < self.max_retries - 1:
-                        time.sleep(10 + attempt * 5)  # Progressive delay
-                        continue
-                
-                # Skip calendar detection - go directly to row extraction
-                # The primary selector often fails but rows are still found
-                self.log_info(f"Proceeding directly to row extraction for {date_str}")
-                
-                # Get calendar rows directly - this is the most reliable approach
+                # Direct row extraction - most reliable approach
                 rows = driver.select_all("tr[data-event-id]")
-                if rows:
-                    self.log_info(f"Found {len(rows)} rows using selector: tr[data-event-id]")
-                else:
-                    self.log_info(f"No rows found for {date_str}")
+                if not rows:
                     if attempt < self.max_retries - 1:
-                        time.sleep(3)  # Reduced wait time
+                        time.sleep(3)
                         continue
                     return []
                 
-                self.log_info(f"Processing {len(rows)} rows for {date_str}")
+                self.log_info(f"Found {len(rows)} rows for {date_str}")
                 
                 # Process each row
                 for i, row in enumerate(rows):
                     try:
-                        event_data = self.extract_detailed_event_data(driver, i, date_str, rows)
+                        event_data = self.extract_event_data(driver, i, date_str, rows)
                         if event_data and (event_data["event"] or event_data["currency"]):
                             events.append(event_data)
                     except Exception as e:
-                        self.log_error(f"Error processing row {i} for {date_str}: {e}")
+                        self.log_error(f"Error processing row {i}: {e}")
                         continue
                 
                 self.log_info(f"Successfully scraped {len(events)} events for {date_str}")
-                break  # Success, exit retry loop
+                break
                 
             except Exception as e:
                 self.log_error(f"Error scraping date {date_str} (attempt {attempt + 1}): {e}")
                 if attempt < self.max_retries - 1:
-                    time.sleep(self.retry_delay + attempt * 1)  # Reduced progressive delay
-                else:
-                    self.log_error(f"Failed to scrape {date_str} after {self.max_retries} attempts")
+                    time.sleep(self.retry_delay + attempt * 1)
         
         return events
     
-    def extract_detailed_event_data(self, driver: Driver, row_index: int, date_str: str, all_rows) -> Dict[str, Any]:
+    def extract_event_data(self, driver: Driver, row_index: int, date_str: str, all_rows) -> Dict[str, Any]:
         try:
+            if row_index >= len(all_rows):
+                return None
+            
+            row_element = all_rows[row_index]
+            
+            # Initialize event data
             event_data = {
                 "date": date_str,
                 "time": "",
@@ -493,220 +488,114 @@ class ComprehensiveForexFactoryScraper:
                 "forecast": "",
                 "previous": "",
                 "details": {
-                    "source": "",
-                    "measures": "",
-                    "usual_effect": "",
-                    "frequency": "",
-                    "next_release": "",
-                    "ff_notes": "",
-                    "derived_via": "",
-                    "acro_expand": "",
-                    "also_called": "",
-                    "speaker": "",
-                    "description": "",
-                    "related_stories": [],
-                    "history": []
+                    "source": "", "measures": "", "usual_effect": "", "frequency": "",
+                    "next_release": "", "ff_notes": "", "derived_via": "", "acro_expand": "",
+                    "also_called": "", "speaker": "", "description": "",
+                    "related_stories": [], "history": []
                 }
             }
             
-            if row_index >= len(all_rows):
-                self.log_error(f"Row index {row_index} out of range, total rows: {len(all_rows)}")
-                return None
+            # Extract basic data using optimized selectors
+            event_data = self.extract_basic_data(row_element, event_data)
             
-            row_element = all_rows[row_index]
-            event_data = self.extract_basic_event_data_from_element(driver, row_element, event_data)
-            
+            # Extract details if event exists
             if event_data["event"] or event_data["currency"]:
                 self.log_info(f"Extracting details for event: {event_data.get('event', 'Unknown')}")
-                event_data = self.extract_details_using_hash_fragment(driver, row_element, event_data)
+                event_data = self.extract_details(driver, row_element, event_data)
             
             return event_data
         
         except Exception as e:
-            self.log_error(f"Error extracting detailed event data for row {row_index}: {e}")
+            self.log_error(f"Error extracting event data for row {row_index}: {e}")
             return None
     
-    def extract_basic_event_data_from_element(self, driver: Driver, row_element, event_data: Dict[str, Any]) -> Dict[str, Any]:
+    def extract_basic_data(self, row_element, event_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Optimized basic data extraction using only the most reliable selectors"""
         try:
-            # Time extraction
-            time_selectors = [
-                ".calendar__time span",
-                ".calendar__time",
-                "[class*='time']",
-                "td:nth-child(2)",
-                "td:first-child"
-            ]
-            for selector in time_selectors:
-                time_elem = row_element.select(selector)
-                if getattr(time_elem, 'text', '').strip():
-                    time_text = time_elem.text.strip()
-                    if time_text and time_text != "All Day":
-                        event_data["time"] = time_text
-                        break
+            # Time - use most reliable selector
+            time_elem = row_element.select(".calendar__time")
+            if time_elem and getattr(time_elem, 'text', '').strip():
+                time_text = time_elem.text.strip()
+                if time_text and time_text != "All Day":
+                    event_data["time"] = time_text
             
-            # Currency extraction
-            currency_selectors = [
-                ".calendar__currency span",
-                ".calendar__currency",
-                "[class*='currency']",
-                "td:nth-child(3)",
-                "td:nth-child(2)"
-            ]
-            for selector in currency_selectors:
-                currency_elem = row_element.select(selector)
-                if getattr(currency_elem, 'text', '').strip():
-                    currency_text = currency_elem.text.strip()
-                    if currency_text and len(currency_text) <= 3:
-                        event_data["currency"] = currency_text
-                        break
+            # Currency - use most reliable selector
+            currency_elem = row_element.select(".calendar__currency")
+            if currency_elem and getattr(currency_elem, 'text', '').strip():
+                currency_text = currency_elem.text.strip()
+                if currency_text and len(currency_text) <= 3:
+                    event_data["currency"] = currency_text
             
-            # Impact extraction
-            impact_selectors = [
-                ".calendar__impact span",
-                ".calendar__impact",
-                "[class*='impact']",
-                "td:nth-child(4)"
-            ]
-            for selector in impact_selectors:
-                impact_elem = row_element.select(selector)
-                if impact_elem:
-                    class_name = (impact_elem.get_attribute("class") or "").lower()
-                    if "ff-impact-red" in class_name:
-                        event_data["impact"] = "High"
-                        break
-                    elif "ff-impact-ora" in class_name:
-                        event_data["impact"] = "Medium"
-                        break
-                    else:
-                        event_data["impact"] = "Low"
-                        break
+            # Impact - use most reliable selector
+            impact_elem = row_element.select(".calendar__impact")
+            if impact_elem:
+                class_name = (impact_elem.get_attribute("class") or "").lower()
+                if "ff-impact-red" in class_name:
+                    event_data["impact"] = "High"
+                elif "ff-impact-ora" in class_name:
+                    event_data["impact"] = "Medium"
             
-            # Event name extraction
-            event_selectors = [
-                ".calendar__event .calendar__event-title",
-                ".calendar__event",
-                "[class*='event']",
-                "td:nth-child(5)",
-                "td:nth-child(4)"
-            ]
-            for selector in event_selectors:
-                event_elem = row_element.select(selector)
-                if getattr(event_elem, 'text', '').strip():
-                    event_text = event_elem.text.strip()
-                    if event_text and len(event_text) > 2:
-                        event_data["event"] = event_text
-                        break
+            # Event name - use most reliable selector
+            event_elem = row_element.select(".calendar__event")
+            if event_elem and getattr(event_elem, 'text', '').strip():
+                event_text = event_elem.text.strip()
+                if event_text and len(event_text) > 2:
+                    event_data["event"] = event_text
             
-            # Actual, Forecast, Previous extraction
-            self._extract_numeric_data(row_element, event_data)
-            
-            return event_data
-        except Exception as e:
-            self.log_error(f"Error extracting basic event data: {e}")
-            return event_data
-    
-    def _extract_numeric_data(self, row_element, event_data):
-        # Actual
-        actual_selectors = [".calendar__actual span", ".calendar__actual", "[class*='actual']"]
-        for selector in actual_selectors:
-            actual_elem = row_element.select(selector)
-            if getattr(actual_elem, 'text', '').strip():
+            # Numeric data - use most reliable selectors
+            actual_elem = row_element.select(".calendar__actual")
+            if actual_elem and getattr(actual_elem, 'text', '').strip():
                 event_data["actual"] = actual_elem.text.strip()
-                break
-        
-        # Forecast
-        forecast_selectors = [".calendar__forecast span", ".calendar__forecast", "[class*='forecast']"]
-        for selector in forecast_selectors:
-            forecast_elem = row_element.select(selector)
-            if getattr(forecast_elem, 'text', '').strip():
-                event_data["forecast"] = forecast_elem.text.strip()
-                break
-        
-        # Previous
-        previous_selectors = [".calendar__previous span", ".calendar__previous", "[class*='previous']"]
-        for selector in previous_selectors:
-            previous_elem = row_element.select(selector)
-            if getattr(previous_elem, 'text', '').strip():
-                event_data["previous"] = previous_elem.text.strip()
-                break
-    
-    def extract_details_using_hash_fragment(self, driver: Driver, row_element, event_data: Dict[str, Any]) -> Dict[str, Any]:
-        try:
-            # Find detail link using best working selector
-            detail_link = None
-            try:
-                detail_link = row_element.select("a.calendar__detail-link")
-                if detail_link:
-                    self.log_info("Found detail link using selector: a.calendar__detail-link")
-            except Exception:
-                self.log_info("Detail link not found with primary selector")
             
-            if detail_link:
-                event_id = row_element.get_attribute("data-event-id")
-                if event_id:
-                    self.log_info(f"Found event ID: {event_id} for event: {event_data.get('event', 'Unknown')}")
-                    
-                    try:
-                        self.log_info(f"Clicking detail link for event: {event_data.get('event', 'Unknown')}")
-                        detail_link.click()
-                        time.sleep(3)
-                        
-                        event_data = self.extract_details_from_detail_pane(driver, event_data)
-                        
-                        detail_link.click()
-                        time.sleep(2)
-                        
-                    except Exception as click_error:
-                        self.log_error(f"Error clicking detail link: {click_error}")
-                        # Fallback to hash fragment
-                        current_url = driver.current_url
-                        detail_url = f"{current_url}#detail={event_id}"
-                        self.log_info(f"Trying hash fragment URL: {detail_url}")
-                        
-                        driver.get(detail_url)
-                        time.sleep(5)
-                        
-                        try:
-                            driver.wait_for_element("div.half.details", timeout=10)
-                            self.log_info("Detail pane loaded successfully")
-                        except:
-                            self.log_info("Detail pane not found, trying alternative selectors")
-                        
-                        event_data = self.extract_details_from_detail_pane(driver, event_data)
-                        driver.get(current_url)
-                        time.sleep(2)
-                else:
-                    self.log_error(f"No event ID found for event: {event_data.get('event', 'Unknown')}")
-                    # Try to extract details anyway
-                    self.log_info(f"Trying to extract details without event ID for: {event_data.get('event', 'Unknown')}")
-                    event_data = self.extract_details_from_detail_pane(driver, event_data)
-            else:
-                self.log_info(f"No detail link found for event: {event_data.get('event', 'Unknown')}")
-                # Try to extract details anyway - maybe they're already visible
-                self.log_info(f"Trying to extract details without detail link for: {event_data.get('event', 'Unknown')}")
-                event_data = self.extract_details_from_detail_pane(driver, event_data)
+            forecast_elem = row_element.select(".calendar__forecast")
+            if forecast_elem and getattr(forecast_elem, 'text', '').strip():
+                event_data["forecast"] = forecast_elem.text.strip()
+            
+            previous_elem = row_element.select(".calendar__previous")
+            if previous_elem and getattr(previous_elem, 'text', '').strip():
+                event_data["previous"] = previous_elem.text.strip()
             
             return event_data
             
         except Exception as e:
-            self.log_error(f"Error extracting details using hash fragment: {e}")
-            # Try to extract details anyway as fallback
-            try:
-                self.log_info(f"Fallback: Trying to extract details for: {event_data.get('event', 'Unknown')}")
-                event_data = self.extract_details_from_detail_pane(driver, event_data)
-            except Exception as fallback_error:
-                self.log_error(f"Fallback detail extraction also failed: {fallback_error}")
+            self.log_error(f"Error extracting basic data: {e}")
             return event_data
     
-    def extract_details_from_detail_pane(self, driver: Driver, event_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract detailed information from the loaded detail pane - OPTIMIZED VERSION"""
+    def extract_details(self, driver: Driver, row_element, event_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Optimized detail extraction using only direct clicking"""
         try:
-            self.log_info(f"EXTRACTING DETAILS for event: {event_data.get('event', 'Unknown')}")
+            # Find and click detail link
+            detail_link = row_element.select("a.calendar__detail-link")
+            if not detail_link:
+                return event_data
             
-            # Wait for dynamic content to load
+            event_id = row_element.get_attribute("data-event-id")
+            if event_id:
+                self.log_info(f"Found event ID: {event_id} for event: {event_data.get('event', 'Unknown')}")
+            
+            # Click detail link and extract
+            detail_link.click()
+            time.sleep(2)
+            
+            event_data = self.extract_detail_fields(driver, event_data)
+            
+            # Close detail pane
+            detail_link.click()
             time.sleep(1)
             
-            # OPTIMIZED APPROACH: Use only Method 3 (page-wide specs tables) - 100% success rate
+            return event_data
+            
+        except Exception as e:
+            self.log_error(f"Error extracting details: {e}")
+            return event_data
+    
+    def extract_detail_fields(self, driver: Driver, event_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Ultra-optimized detail field extraction"""
+        try:
+            # Wait for content to load
+            time.sleep(1)
+            
+            # Extract from specs tables
             all_specs_tables = driver.select_all("table.calendarspecs")
             
             if all_specs_tables:
@@ -722,7 +611,7 @@ class ComprehensiveForexFactoryScraper:
                             spec_name = spec_cells[0].text.strip()
                             spec_value = spec_cells[1].text.strip()
                             
-                            # Map spec names to our fields
+                            # Map spec names to fields
                             if "Source" in spec_name:
                                 event_data["details"]["source"] = spec_value
                             elif "Measures" in spec_name:
@@ -750,28 +639,16 @@ class ComprehensiveForexFactoryScraper:
                                 event_data["details"]["speaker"] = spec_value
                             elif "Description" in spec_name:
                                 event_data["details"]["description"] = spec_value
-            else:
-                self.log_info("No specs tables found on page")
             
             # Log extraction summary
-            detail_count = self._count_details(event_data)
+            detail_count = sum(1 for v in event_data["details"].values() if v and v != "")
             self.log_info(f"Extracted {detail_count} detail fields for {event_data.get('event', 'Unknown')}")
             
             return event_data
             
         except Exception as e:
-            self.log_error(f"Error extracting details: {e}")
+            self.log_error(f"Error extracting detail fields: {e}")
             return event_data
-    
-    def _has_details(self, event_data: Dict[str, Any]) -> bool:
-        """Check if event has any details"""
-        details = event_data.get("details", {})
-        return any(v for v in details.values() if v)
-    
-    def _count_details(self, event_data: Dict[str, Any]) -> int:
-        """Count how many detail fields have values"""
-        details = event_data.get("details", {})
-        return sum(1 for v in details.values() if v and v != "")
 
 # Global instances
 redis_db = RedisDatabase()
