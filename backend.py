@@ -1021,8 +1021,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Configure as needed for production
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 # Request logging middleware
@@ -1123,30 +1124,34 @@ async def get_events(
                 
                 logger.info(f"SCRAPED: {len(scraped_events)} events for missing dates")
                 
-                if scraped_events:
-                    # Group scraped events by date for saving
-                    scraped_by_date = {}
-                    for event in scraped_events:
-                        event_date = event.get('date', '')
-                        if event_date in missing_dates:  # Ensure no extras
-                            if event_date not in scraped_by_date:
-                                scraped_by_date[event_date] = []
-                            scraped_by_date[event_date].append(event)
+                # ALWAYS process ALL missing dates, even if no events were found
+                # Initialize scraped_by_date with empty arrays for all missing dates
+                scraped_by_date = {}
+                for missing_date in missing_dates:
+                    scraped_by_date[missing_date] = []
+
+                # Add scraped events to their respective dates
+                for event in scraped_events:
+                    event_date = event.get('date', '')
+                    if event_date in scraped_by_date:  # Should always be true now
+                        scraped_by_date[event_date].append(event)
+
+                # Save ALL missing dates to database (both original and paraphrased)
+                # This includes dates with zero events (empty arrays)
+                for date, date_events in scraped_by_date.items():
+                    # Save original
+                    original_key = redis_db.key_for(date, paraphrased=False)
+                    redis_db.client.set(original_key, json.dumps(date_events, ensure_ascii=False))
                     
-                    # Save only scraped (missing) dates to database (both original and paraphrased)
-                    for date, date_events in scraped_by_date.items():
-                        # Save original
-                        original_key = redis_db.key_for(date, paraphrased=False)
-                        redis_db.client.set(original_key, json.dumps(date_events, ensure_ascii=False))
-                        
-                        # Save paraphrased
-                        paraphrased_events = [paraphrase_event(e) for e in date_events]
-                        paraphrased_key = redis_db.key_for(date, paraphrased=True)
-                        redis_db.client.set(paraphrased_key, json.dumps(paraphrased_events, ensure_ascii=False))
-                        
-                        logger.info(f"SAVED TO DB: {len(date_events)} events for {date} (original + paraphrased)")
+                    # Save paraphrased
+                    paraphrased_events = [paraphrase_event(e) for e in date_events]
+                    paraphrased_key = redis_db.key_for(date, paraphrased=True)
+                    redis_db.client.set(paraphrased_key, json.dumps(paraphrased_events, ensure_ascii=False))
                     
-                    # Add to all_events in the requested format
+                    logger.info(f"SAVED TO DB: {len(date_events)} events for {date} (original + paraphrased)")
+
+                # Add to all_events in the requested format
+                if scraped_events:  # Only if we actually got some events
                     if original:
                         all_events.extend(scraped_events)  # Add original scraped
                     else:
@@ -1243,6 +1248,7 @@ async def database_info():
         stats = redis_db.get_stats()
         return {
             **stats,
+            "total_records": stats.get("total_keys", 0),  # Alias for frontend compatibility
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
@@ -1279,6 +1285,5 @@ if __name__ == "__main__":
         workers=1,  # Single worker to avoid browser conflicts
         log_level="info"
     )
-
 
 

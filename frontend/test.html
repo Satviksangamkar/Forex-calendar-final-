@@ -9,22 +9,53 @@
         .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
         .success { background-color: #d4edda; color: #155724; }
         .error { background-color: #f8d7da; color: #721c24; }
+        .info { background-color: #d1ecf1; color: #0c5460; }
         button { padding: 10px 20px; margin: 5px; }
+        .port-info { background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin: 10px 0; }
     </style>
 </head>
 <body>
     <h1>Frontend Backend Connection Test</h1>
     
     <div id="status" class="status">Testing connection...</div>
+    <div id="portInfo" class="port-info">Detecting backend port...</div>
     
     <button onclick="testHealth()">Test Health Endpoint</button>
     <button onclick="testEvents()">Test Events Endpoint</button>
     <button onclick="testCORS()">Test CORS</button>
+    <button onclick="findBackendPort()">Find Backend Port</button>
     
     <div id="results"></div>
 
     <script>
-        const baseUrl = 'http://localhost:8000';
+        const possiblePorts = [8000, 8001, 8002, 8003, 8004, 8005, 8006, 8007, 8008, 8009, 8010];
+        let baseUrl = 'http://localhost:8000';
+        
+        async function findBackendPort() {
+            showResult('Port Detection', 'info', 'Scanning for backend...');
+            
+            for (const port of possiblePorts) {
+                try {
+                    const testUrl = `http://localhost:${port}/health`;
+                    const response = await fetch(testUrl, { 
+                        method: 'GET',
+                        timeout: 2000 
+                    });
+                    if (response.ok) {
+                        baseUrl = `http://localhost:${port}`;
+                        document.getElementById('portInfo').textContent = `Backend found on port ${port}`;
+                        showResult('Port Detection', 'success', `Backend found on port ${port}`);
+                        return;
+                    }
+                } catch (error) {
+                    console.log(`Port ${port} not available:`, error.message);
+                    continue;
+                }
+            }
+            
+            showResult('Port Detection', 'error', 'No backend found on any port');
+            document.getElementById('portInfo').textContent = 'No backend found on any port';
+        }
         
         async function testHealth() {
             try {
@@ -71,7 +102,9 @@
         
         // Auto-test on load
         window.onload = function() {
-            testHealth();
+            findBackendPort().then(() => {
+                testHealth();
+            });
         };
     </script>
 </body>

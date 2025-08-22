@@ -1,6 +1,8 @@
 class ForexCalendar {
     constructor() {
-        this.baseUrl = 'http://localhost:8000';
+        // Try multiple ports in case backend runs on different port
+        this.possiblePorts = [8000, 8001, 8002, 8003, 8004, 8005, 8006, 8007, 8008, 8009, 8010];
+        this.baseUrl = null;
         this.events = [];
         this.filteredEvents = [];
         this.currentFilters = {
@@ -11,11 +13,39 @@ class ForexCalendar {
         this.init();
     }
 
-    init() {
+    async init() {
+        await this.findBackendPort();
         this.setupEventListeners();
         this.setDefaultDates();
-        this.checkHealth();
-        this.loadDatabaseStats();
+        if (this.baseUrl) {
+            await this.checkHealth();
+            await this.loadDatabaseStats();
+        }
+    }
+
+    async findBackendPort() {
+        // Try to find the correct backend port
+        for (const port of this.possiblePorts) {
+            try {
+                const testUrl = `http://localhost:${port}/health`;
+                const response = await fetch(testUrl, { 
+                    method: 'GET',
+                    timeout: 2000 
+                });
+                if (response.ok) {
+                    this.baseUrl = `http://localhost:${port}`;
+                    console.log(`Backend found on port ${port}`);
+                    return;
+                }
+            } catch (error) {
+                console.log(`Port ${port} not available:`, error.message);
+                continue;
+            }
+        }
+        
+        // If no port found, default to 8000
+        this.baseUrl = 'http://localhost:8000';
+        console.warn('Could not detect backend port, defaulting to 8000');
     }
 
     setupEventListeners() {
@@ -75,17 +105,27 @@ class ForexCalendar {
     }
 
     async checkHealth() {
+        if (!this.baseUrl) {
+            this.showNotification('Backend URL not configured', 'error');
+            return;
+        }
+
         try {
             console.log('Checking health at:', `${this.baseUrl}/health`);
-            const response = await fetch(`${this.baseUrl}/health`);
-            const isOnline = response.ok;
+            const response = await fetch(`${this.baseUrl}/health`, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                },
+                timeout: 5000
+            });
             
             console.log('Health response:', response.status, response.statusText);
             
             const statusDot = document.getElementById('statusDot');
             const statusText = document.getElementById('statusText');
             
-            if (isOnline) {
+            if (response.ok) {
                 const data = await response.json();
                 statusDot.className = 'status-dot status-dot--online';
                 statusText.textContent = `Connected (Redis: ${data.redis})`;
@@ -108,6 +148,11 @@ class ForexCalendar {
     }
 
     async loadEvents() {
+        if (!this.baseUrl) {
+            this.showNotification('Backend not connected', 'error');
+            return;
+        }
+
         const startDate = document.getElementById('startDate').value;
         const endDate = document.getElementById('endDate').value;
         const useOriginal = !document.getElementById('dataToggle').checked;
@@ -125,7 +170,14 @@ class ForexCalendar {
             const url = `${this.baseUrl}/events?start=${startDate}&end=${endDate}&original=${useOriginal}`;
             console.log('Fetching events from:', url);
             
-            const response = await fetch(url);
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                },
+                timeout: 30000 // 30 second timeout for scraping
+            });
+            
             console.log('Events response:', response.status, response.statusText);
 
             if (!response.ok) {
@@ -334,13 +386,29 @@ class ForexCalendar {
     }
 
     async loadDatabaseStats() {
+        if (!this.baseUrl) {
+            document.getElementById('totalRecords').textContent = 'N/A';
+            document.getElementById('dateRange').textContent = 'N/A';
+            return;
+        }
+
         try {
-            const response = await fetch(`${this.baseUrl}/database/info`);
+            const response = await fetch(`${this.baseUrl}/database/info`, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                },
+                timeout: 5000
+            });
+            
             if (response.ok) {
                 const data = await response.json();
-                document.getElementById('totalRecords').textContent = data.total_records || '0';
-                document.getElementById('dateRange').textContent = 
-                    data.date_range ? `${data.date_range.start} to ${data.date_range.end}` : 'No data';
+                // Handle different field names from backend
+                const totalRecords = data.total_keys || data.total_records || '0';
+                const dateRange = data.date_range ? `${data.date_range.start} to ${data.date_range.end}` : 'No data';
+                
+                document.getElementById('totalRecords').textContent = totalRecords;
+                document.getElementById('dateRange').textContent = dateRange;
             } else {
                 throw new Error('Backend not available');
             }
@@ -352,6 +420,11 @@ class ForexCalendar {
     }
 
     async deleteRange() {
+        if (!this.baseUrl) {
+            this.showNotification('Backend not connected', 'error');
+            return;
+        }
+
         const startDate = document.getElementById('startDate').value;
         const endDate = document.getElementById('endDate').value;
 
@@ -366,10 +439,17 @@ class ForexCalendar {
 
         try {
             const url = `${this.baseUrl}/database/delete?start=${startDate}&end=${endDate}`;
-            const response = await fetch(url, { method: 'DELETE' });
+            const response = await fetch(url, { 
+                method: 'DELETE',
+                headers: {
+                    'Accept': 'application/json',
+                },
+                timeout: 10000
+            });
 
             if (response.ok) {
-                this.showNotification('Records deleted successfully', 'success');
+                const result = await response.json();
+                this.showNotification(result.message || 'Records deleted successfully', 'success');
                 this.loadDatabaseStats();
                 // Clear current events if they fall in deleted range
                 this.events = [];
