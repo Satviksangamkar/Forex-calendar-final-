@@ -1,7 +1,7 @@
 class ForexCalendar {
     constructor() {
-        // Try multiple ports in case backend runs on different port
-        this.possiblePorts = [8000, 8001, 8002, 8003, 8004, 8005, 8006, 8007, 8008, 8009, 8010];
+        // Prioritize port 8003 where backend is currently running
+        this.possiblePorts = [8003, 8001, 8000, 8002, 8004, 8005, 8006, 8007, 8008, 8009, 8010];
         this.baseUrl = null;
         this.events = [];
         this.filteredEvents = [];
@@ -28,13 +28,24 @@ class ForexCalendar {
         for (const port of this.possiblePorts) {
             try {
                 const testUrl = `http://localhost:${port}/health`;
-                const response = await fetch(testUrl, { 
-                    method: 'GET',
-                    timeout: 2000 
+                
+                // Create a timeout promise
+                const timeoutPromise = new Promise((_, reject) => {
+                    setTimeout(() => reject(new Error('Port check timeout')), 2000);
                 });
+                
+                // Create the fetch promise
+                const fetchPromise = fetch(testUrl, { 
+                    method: 'GET'
+                });
+                
+                // Race between fetch and timeout
+                const response = await Promise.race([fetchPromise, timeoutPromise]);
+                
                 if (response.ok) {
                     this.baseUrl = `http://localhost:${port}`;
-                    console.log(`Backend found on port ${port}`);
+                    console.log(`✅ Backend found on port ${port}`);
+                    this.showNotification(`Backend connected on port ${port}`, 'success');
                     return;
                 }
             } catch (error) {
@@ -43,9 +54,10 @@ class ForexCalendar {
             }
         }
         
-        // If no port found, default to 8000
-        this.baseUrl = 'http://localhost:8000';
-        console.warn('Could not detect backend port, defaulting to 8000');
+        // If no port found, default to 8003 (current backend port)
+        this.baseUrl = 'http://localhost:8003';
+        console.warn('Could not detect backend port, defaulting to 8003');
+        this.showNotification('Backend port detection failed, using default port 8003', 'warning');
     }
 
     setupEventListeners() {
@@ -112,13 +124,22 @@ class ForexCalendar {
 
         try {
             console.log('Checking health at:', `${this.baseUrl}/health`);
-            const response = await fetch(`${this.baseUrl}/health`, {
+            
+            // Create a timeout promise
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Health check timeout after 5 seconds')), 5000);
+            });
+            
+            // Create the fetch promise
+            const fetchPromise = fetch(`${this.baseUrl}/health`, {
                 method: 'GET',
                 headers: {
                     'Accept': 'application/json',
-                },
-                timeout: 5000
+                }
             });
+            
+            // Race between fetch and timeout
+            const response = await Promise.race([fetchPromise, timeoutPromise]);
             
             console.log('Health response:', response.status, response.statusText);
             
@@ -127,10 +148,17 @@ class ForexCalendar {
             
             if (response.ok) {
                 const data = await response.json();
-                statusDot.className = 'status-dot status-dot--online';
-                statusText.textContent = `Connected (Redis: ${data.redis})`;
-                console.log('Backend is online:', data);
-                this.showNotification(`Backend connected successfully! Redis: ${data.redis}`, 'success');
+                console.log('Health data:', data);
+                
+                if (data.status === 'healthy' && data.redis === 'connected') {
+                    statusDot.className = 'status-dot status-dot--online';
+                    statusText.textContent = `Connected (Redis: ${data.redis})`;
+                    this.showNotification(`Backend connected successfully! Redis: ${data.redis}`, 'success');
+                } else {
+                    statusDot.className = 'status-dot status-dot--offline';
+                    statusText.textContent = `Unhealthy (Redis: ${data.redis || 'unknown'})`;
+                    this.showNotification(`Backend unhealthy: Redis ${data.redis || 'unknown'}`, 'error');
+                }
             } else {
                 statusDot.className = 'status-dot status-dot--offline';
                 statusText.textContent = 'Offline';
@@ -155,7 +183,7 @@ class ForexCalendar {
 
         const startDate = document.getElementById('startDate').value;
         const endDate = document.getElementById('endDate').value;
-        const useOriginal = !document.getElementById('dataToggle').checked;
+        const useParaphrased = document.getElementById('dataToggle').checked;
 
         if (!startDate || !endDate) {
             this.showNotification('Please select both start and end dates', 'error');
@@ -167,18 +195,41 @@ class ForexCalendar {
         this.hideEmpty();
 
         try {
-            const url = `${this.baseUrl}/events?start=${startDate}&end=${endDate}&original=${useOriginal}`;
-            console.log('Fetching events from:', url);
+            // Use the appropriate endpoint based on data type preference
+            let url;
+            if (useParaphrased) {
+                // Default endpoint returns paraphrased data
+                url = `${this.baseUrl}/events?start=${startDate}&end=${endDate}`;
+            } else {
+                // Use the dedicated original endpoint
+                url = `${this.baseUrl}/events/original?start=${startDate}&end=${endDate}`;
+            }
             
-            const response = await fetch(url, {
+            console.log('Fetching events from:', url);
+            console.log('Base URL:', this.baseUrl);
+            console.log('Start Date:', startDate);
+            console.log('End Date:', endDate);
+            console.log('Use Paraphrased:', useParaphrased);
+            
+            // Create a timeout promise
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Request timeout after 30 seconds')), 30000);
+            });
+            
+            // Create the fetch promise
+            const fetchPromise = fetch(url, {
                 method: 'GET',
                 headers: {
                     'Accept': 'application/json',
-                },
-                timeout: 30000 // 30 second timeout for scraping
+                }
             });
             
+            // Race between fetch and timeout
+            const response = await Promise.race([fetchPromise, timeoutPromise]);
+            
             console.log('Events response:', response.status, response.statusText);
+            console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+            console.log('Response ok:', response.ok);
 
             if (!response.ok) {
                 const errorText = await response.text();
@@ -187,23 +238,34 @@ class ForexCalendar {
 
             const responseData = await response.json();
             console.log('Response data:', responseData);
+            console.log('Response data type:', typeof responseData);
+            console.log('Response data keys:', Object.keys(responseData));
             
             // Handle the structured response from backend
             if (responseData.success && responseData.data) {
                 this.events = responseData.data;
                 console.log(`Loaded ${this.events.length} events from ${responseData.source} in ${responseData.processing_time_ms}ms`);
+                console.log('First event sample:', this.events[0]);
+                
+                // Update data source info
+                this.updateDataSourceInfo(responseData.source, responseData.processing_time_ms, useParaphrased ? 'paraphrased' : 'original');
                 
                 // Apply filters and render
                 this.applyFilters();
                 this.hideLoading();
                 this.renderEvents();
                 
-                const dataType = useOriginal ? 'original' : 'paraphrased';
+                const dataType = useParaphrased ? 'paraphrased' : 'original';
                 this.showNotification(
                     `Loaded ${this.events.length} events from ${responseData.source} (${dataType}) in ${responseData.processing_time_ms}ms`, 
                     'success'
                 );
             } else {
+                console.log('No events found or invalid response structure');
+                console.log('Response success:', responseData.success);
+                console.log('Response data exists:', !!responseData.data);
+                console.log('Response data length:', responseData.data ? responseData.data.length : 'N/A');
+                
                 this.events = [];
                 this.hideLoading();
                 this.showEmpty();
@@ -219,6 +281,9 @@ class ForexCalendar {
     }
 
     applyFilters() {
+        console.log('Applying filters to', this.events.length, 'events');
+        console.log('Current filters:', this.currentFilters);
+        
         this.filteredEvents = this.events.filter(event => {
             const matchesSearch = !this.currentFilters.search || 
                 event.event.toLowerCase().includes(this.currentFilters.search.toLowerCase()) ||
@@ -229,6 +294,8 @@ class ForexCalendar {
             
             return matchesSearch && matchesCurrency;
         });
+        
+        console.log('Filtered to', this.filteredEvents.length, 'events');
     }
 
     handleSearch(searchTerm) {
@@ -245,18 +312,22 @@ class ForexCalendar {
     }
 
     renderEvents() {
+        console.log('Rendering events...');
         const tbody = document.getElementById('eventsTableBody');
         tbody.innerHTML = '';
 
         if (this.filteredEvents.length === 0) {
+            console.log('No filtered events to render, showing empty state');
             this.showEmpty();
             return;
         }
 
+        console.log('Rendering', this.filteredEvents.length, 'filtered events');
         this.hideEmpty();
         document.getElementById('eventsSection').classList.remove('hidden');
 
         this.filteredEvents.forEach((event, index) => {
+            console.log(`Rendering event ${index}:`, event);
             const row = document.createElement('tr');
             
             // Apply impact-based row coloring
@@ -273,10 +344,10 @@ class ForexCalendar {
                 <td>
                     <span class="impact-badge ${this.getImpactClass(event.impact)}">${event.impact}</span>
                 </td>
-                <td class="event-name">${event.event}</td>
-                <td>${event.actual || '-'}</td>
-                <td>${event.forecast || '-'}</td>
-                <td>${event.previous || '-'}</td>
+                <td class="event-name">${this.escapeHtml(event.event)}</td>
+                <td>${this.escapeHtml(event.actual || '-')}</td>
+                <td>${this.escapeHtml(event.forecast || '-')}</td>
+                <td>${this.escapeHtml(event.previous || '-')}</td>
                 <td>
                     <button class="details-btn" data-event-index="${index}">
                         View Details
@@ -295,6 +366,27 @@ class ForexCalendar {
                 this.showEventDetails(index);
             });
         });
+        
+        console.log('Events rendered successfully');
+    }
+
+    escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    updateDataSourceInfo(source, processingTime, dataType) {
+        const sourceElement = document.getElementById('dataSource');
+        const timeElement = document.getElementById('processingTime');
+        const dataTypeElement = document.getElementById('dataType');
+        
+        if (sourceElement && timeElement && dataTypeElement) {
+            sourceElement.textContent = source || 'Unknown';
+            timeElement.textContent = processingTime ? `${processingTime}ms` : 'Unknown';
+            dataTypeElement.textContent = dataType || 'Unknown';
+        }
     }
 
     getImpactClass(impact) {
@@ -393,22 +485,37 @@ class ForexCalendar {
         }
 
         try {
-            const response = await fetch(`${this.baseUrl}/database/info`, {
+            // Create a timeout promise
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Database stats timeout after 5 seconds')), 5000);
+            });
+            
+            // Create the fetch promise
+            const fetchPromise = fetch(`${this.baseUrl}/database/info`, {
                 method: 'GET',
                 headers: {
                     'Accept': 'application/json',
-                },
-                timeout: 5000
+                }
             });
+            
+            // Race between fetch and timeout
+            const response = await Promise.race([fetchPromise, timeoutPromise]);
             
             if (response.ok) {
                 const data = await response.json();
-                // Handle different field names from backend
+                console.log('Database stats:', data);
+                
+                // Handle the new backend response structure
                 const totalRecords = data.total_keys || data.total_records || '0';
-                const dateRange = data.date_range ? `${data.date_range.start} to ${data.date_range.end}` : 'No data';
+                
+                // Format date range if available, otherwise show total records info
+                let dateRangeText = 'No data';
+                if (data.total_keys && data.total_keys > 0) {
+                    dateRangeText = `${data.total_keys} records stored`;
+                }
                 
                 document.getElementById('totalRecords').textContent = totalRecords;
-                document.getElementById('dateRange').textContent = dateRange;
+                document.getElementById('dateRange').textContent = dateRangeText;
             } else {
                 throw new Error('Backend not available');
             }
@@ -439,13 +546,22 @@ class ForexCalendar {
 
         try {
             const url = `${this.baseUrl}/database/delete?start=${startDate}&end=${endDate}`;
-            const response = await fetch(url, { 
+            
+            // Create a timeout promise
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Delete operation timeout after 10 seconds')), 10000);
+            });
+            
+            // Create the fetch promise
+            const fetchPromise = fetch(url, { 
                 method: 'DELETE',
                 headers: {
                     'Accept': 'application/json',
-                },
-                timeout: 10000
+                }
             });
+            
+            // Race between fetch and timeout
+            const response = await Promise.race([fetchPromise, timeoutPromise]);
 
             if (response.ok) {
                 const result = await response.json();
@@ -512,6 +628,7 @@ class ForexCalendar {
         document.getElementById('errorMessage').textContent = message;
         document.getElementById('errorState').classList.remove('hidden');
         document.getElementById('eventsSection').classList.add('hidden');
+        this.updateDataSourceInfo('', '', '');
     }
 
     hideError() {
@@ -521,6 +638,7 @@ class ForexCalendar {
     showEmpty() {
         document.getElementById('emptyState').classList.remove('hidden');
         document.getElementById('eventsSection').classList.add('hidden');
+        this.updateDataSourceInfo('', '', '');
     }
 
     hideEmpty() {
@@ -545,10 +663,145 @@ class ForexCalendar {
         const notification = document.getElementById('notification');
         notification.classList.remove('show');
     }
+
+    // Comprehensive test function for August 11-14, 2025
+    async testAugust11to14() {
+        if (!this.baseUrl) {
+            this.showNotification('Backend not connected', 'error');
+            return;
+        }
+
+        this.showNotification('Starting comprehensive test for August 11-14, 2025...', 'info');
+        
+        const testResults = {
+            health: false,
+            august11: false,
+            august11to12: false,
+            august11to14: false,
+            original: false,
+            database: false
+        };
+
+        try {
+            // Test 1: Health Check
+            console.log('🧪 Test 1: Health Check');
+            const healthResponse = await fetch(`${this.baseUrl}/health`);
+            if (healthResponse.ok) {
+                const healthData = await healthResponse.json();
+                console.log('✅ Health Check Passed:', healthData);
+                testResults.health = true;
+                this.showNotification('✅ Health check passed', 'success');
+            } else {
+                console.log('❌ Health Check Failed');
+                this.showNotification('❌ Health check failed', 'error');
+            }
+
+            // Test 2: August 11, 2025 (Single Day)
+            console.log('🧪 Test 2: August 11, 2025 (Single Day)');
+            const august11Response = await fetch(`${this.baseUrl}/events?start=2025-08-11&end=2025-08-11`);
+            if (august11Response.ok) {
+                const august11Data = await august11Response.json();
+                console.log('✅ August 11 Test Passed:', august11Data);
+                testResults.august11 = true;
+                this.showNotification(`✅ August 11: ${august11Data.total_events} events from ${august11Data.source}`, 'success');
+            } else {
+                console.log('❌ August 11 Test Failed');
+                this.showNotification('❌ August 11 test failed', 'error');
+            }
+
+            // Test 3: August 11-12, 2025 (Two Days)
+            console.log('🧪 Test 3: August 11-12, 2025 (Two Days)');
+            const august11to12Response = await fetch(`${this.baseUrl}/events?start=2025-08-11&end=2025-08-12`);
+            if (august11to12Response.ok) {
+                const august11to12Data = await august11to12Response.json();
+                console.log('✅ August 11-12 Test Passed:', august11to12Data);
+                testResults.august11to12 = true;
+                this.showNotification(`✅ August 11-12: ${august11to12Data.total_events} events from ${august11to12Data.source}`, 'success');
+            } else {
+                console.log('❌ August 11-12 Test Failed');
+                this.showNotification('❌ August 11-12 test failed', 'error');
+            }
+
+            // Test 4: August 11-14, 2025 (Four Days)
+            console.log('🧪 Test 4: August 11-14, 2025 (Four Days)');
+            const august11to14Response = await fetch(`${this.baseUrl}/events?start=2025-08-11&end=2025-08-14`);
+            if (august11to14Response.ok) {
+                const august11to14Data = await august11to14Response.json();
+                console.log('✅ August 11-14 Test Passed:', august11to14Data);
+                testResults.august11to14 = true;
+                this.showNotification(`✅ August 11-14: ${august11to14Data.total_events} events from ${august11to14Data.source}`, 'success');
+            } else {
+                console.log('❌ August 11-14 Test Failed');
+                this.showNotification('❌ August 11-14 test failed', 'error');
+            }
+
+            // Test 5: Original Data (Non-paraphrased)
+            console.log('🧪 Test 5: Original Data (Non-paraphrased)');
+            const originalResponse = await fetch(`${this.baseUrl}/events/original?start=2025-08-11&end=2025-08-11`);
+            if (originalResponse.ok) {
+                const originalData = await originalResponse.json();
+                console.log('✅ Original Data Test Passed:', originalData);
+                testResults.original = true;
+                this.showNotification(`✅ Original data: ${originalData.total_events} events from ${originalData.source}`, 'success');
+            } else {
+                console.log('❌ Original Data Test Failed');
+                this.showNotification('❌ Original data test failed', 'error');
+            }
+
+            // Test 6: Database Info
+            console.log('🧪 Test 6: Database Info');
+            const databaseResponse = await fetch(`${this.baseUrl}/database/info`);
+            if (databaseResponse.ok) {
+                const databaseData = await databaseResponse.json();
+                console.log('✅ Database Info Test Passed:', databaseData);
+                testResults.database = true;
+                this.showNotification(`✅ Database info: ${databaseData.total_keys || 0} keys`, 'success');
+            } else {
+                console.log('❌ Database Info Test Failed');
+                this.showNotification('❌ Database info test failed', 'error');
+            }
+
+            // Summary
+            const passedTests = Object.values(testResults).filter(Boolean).length;
+            const totalTests = Object.keys(testResults).length;
+            
+            console.log('📊 Test Summary:', testResults);
+            console.log(`🎯 ${passedTests}/${totalTests} tests passed`);
+            
+            if (passedTests === totalTests) {
+                this.showNotification(`🎉 All ${totalTests} tests passed! Backend is fully operational.`, 'success');
+            } else {
+                this.showNotification(`⚠️ ${passedTests}/${totalTests} tests passed. Some issues detected.`, 'warning');
+            }
+
+            // Load the August 11-14 data into the main interface
+            if (testResults.august11to14) {
+                document.getElementById('startDate').value = '2025-08-11';
+                document.getElementById('endDate').value = '2025-08-14';
+                this.loadEvents();
+            }
+
+        } catch (error) {
+            console.error('❌ Test suite error:', error);
+            this.showNotification(`❌ Test suite failed: ${error.message}`, 'error');
+        }
+    }
 }
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Initializing Forex Calendar application...');
     const forexCalendar = new ForexCalendar();
+    
+    // Add test button to the interface
+    const testButton = document.createElement('button');
+    testButton.id = 'testAugust11to14';
+    testButton.className = 'btn btn--secondary';
+    testButton.textContent = 'Test Aug 11-14, 2025';
+    testButton.style.marginLeft = '10px';
+    testButton.addEventListener('click', () => forexCalendar.testAugust11to14());
+    
+    // Insert after the test connection button
+    const testConnectionBtn = document.getElementById('testConnection');
+    testConnectionBtn.parentNode.insertBefore(testButton, testConnectionBtn.nextSibling);
 });

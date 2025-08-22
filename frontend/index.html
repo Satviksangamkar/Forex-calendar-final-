@@ -27,10 +27,13 @@
                     
                     <div class="toggle-group">
                         <label class="toggle-label">
-                            <input type="checkbox" id="dataToggle" class="toggle-input">
+                            <input type="checkbox" id="dataToggle" class="toggle-input" checked>
                             <span class="toggle-slider"></span>
-                            <span class="toggle-text">Paraphrased Data</span>
+                            <span class="toggle-text">Use Paraphrased Data</span>
                         </label>
+                        <div class="toggle-description">
+                            <small>Paraphrased data provides enhanced descriptions and expanded abbreviations for better readability</small>
+                        </div>
                     </div>
                     
                     <button id="loadEvents" class="btn btn--primary">Load Events</button>
@@ -90,6 +93,20 @@
 
             <!-- Events Table -->
             <div id="eventsSection" class="events-section">
+                <div class="data-source-info" id="dataSourceInfo">
+                    <div class="source-indicator">
+                        <span class="source-label">Data Source:</span>
+                        <span id="dataSource" class="source-value">-</span>
+                    </div>
+                    <div class="data-type-indicator">
+                        <span class="type-label">Data Type:</span>
+                        <span id="dataType" class="type-value">-</span>
+                    </div>
+                    <div class="processing-time">
+                        <span class="time-label">Processing Time:</span>
+                        <span id="processingTime" class="time-value">-</span>
+                    </div>
+                </div>
                 <div class="table-container">
                     <table id="eventsTable" class="events-table">
                         <thead>

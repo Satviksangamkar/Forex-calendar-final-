@@ -399,10 +399,9 @@ class RedisDatabase:
             logger.error(f"Error getting Redis stats: {e}")
             return {}
 
-# Optimized Forex Factory Scraper
-class ComprehensiveForexFactoryScraper:
+# Ultra-Optimized Forex Factory Scraper
+class ComprehensiveScraper:
     def __init__(self):
-        self.results = []
         self.max_retries = 3
         self.retry_delay = 5
     
@@ -428,94 +427,57 @@ class ComprehensiveForexFactoryScraper:
                 self.log_info(f"Scraping URL (attempt {attempt + 1}): {url}")
                 
                 driver.get(url)
-                time.sleep(random.uniform(3, 6))  # Random delay
+                time.sleep(random.uniform(2, 4))
                 
                 # Check for Cloudflare
                 try:
                     page_text = driver.get_text("body")
+                    if "Just a moment" in page_text or "Checking your browser" in page_text:
+                        self.log_error(f"Cloudflare protection detected for {date_str}")
+                        if attempt < self.max_retries - 1:
+                            time.sleep(10 + attempt * 5)
+                            continue
                 except Exception:
-                    page_text = ""
+                    pass
                 
-                if "Just a moment" in page_text or "Checking your browser" in page_text:
-                    self.log_error(f"Cloudflare protection detected for {date_str}")
-                    if attempt < self.max_retries - 1:
-                        time.sleep(10 + attempt * 5)  # Progressive delay
-                        continue
-                
-                # Wait for calendar table with multiple selectors
-                calendar_found = False
-                calendar_selectors = [
-                    "table",
-                    "table.calendar__table",
-                    ".calendar",
-                    "[class*='calendar']",
-                    "[data-event-id]"
-                ]
-                
-                for selector in calendar_selectors:
-                    try:
-                        driver.wait_for_element(selector, timeout=15)
-                        self.log_info(f"Calendar found using selector: {selector}")
-                        calendar_found = True
-                        break
-                    except Exception:
-                        continue
-                
-                if not calendar_found:
-                    self.log_info(f"No calendar table found for {date_str}")
-                    if attempt < self.max_retries - 1:
-                        time.sleep(5)
-                        continue
-                
-                # Get calendar rows
-                rows = []
-                selectors = [
-                    "tr[data-event-id]",
-                    "tr.calendar__row:not(.calendar__details)",
-                    "tr.calendar__row",
-                    "tbody tr",
-                    "tr"
-                ]
-                
-                for selector in selectors:
-                    rows = driver.select_all(selector)
-                    if rows:
-                        self.log_info(f"Found {len(rows)} rows using selector: {selector}")
-                        break
-                
+                # Direct row extraction - most reliable approach
+                rows = driver.select_all("tr[data-event-id]")
                 if not rows:
-                    self.log_error(f"No calendar rows found for {date_str}")
                     if attempt < self.max_retries - 1:
-                        time.sleep(5)
+                        time.sleep(3)
                         continue
                     return []
                 
-                self.log_info(f"Processing {len(rows)} rows for {date_str}")
+                self.log_info(f"Found {len(rows)} rows for {date_str}")
                 
                 # Process each row
                 for i, row in enumerate(rows):
                     try:
-                        event_data = self.extract_detailed_event_data(driver, i, date_str, rows)
+                        event_data = self.extract_event_data(driver, i, date_str, rows)
                         if event_data and (event_data["event"] or event_data["currency"]):
                             events.append(event_data)
                     except Exception as e:
-                        self.log_error(f"Error processing row {i} for {date_str}: {e}")
+                        self.log_error(f"Error processing row {i}: {e}")
                         continue
                 
                 self.log_info(f"Successfully scraped {len(events)} events for {date_str}")
-                break  # Success, exit retry loop
+                break
                 
             except Exception as e:
                 self.log_error(f"Error scraping date {date_str} (attempt {attempt + 1}): {e}")
                 if attempt < self.max_retries - 1:
-                    time.sleep(self.retry_delay + attempt * 2)
-                else:
-                    self.log_error(f"Failed to scrape {date_str} after {self.max_retries} attempts")
+                    time.sleep(self.retry_delay + attempt * 1)
         
         return events
     
-    def extract_detailed_event_data(self, driver: Driver, row_index: int, date_str: str, all_rows) -> Dict[str, Any]:
+    def extract_event_data(self, driver: Driver, row_index: int, date_str: str, all_rows) -> Dict[str, Any]:
         try:
+            if row_index >= len(all_rows):
+                return None
+            
+            row_element = all_rows[row_index]
+            
+            # Initialize event data
             event_data = {
                 "date": date_str,
                 "time": "",
@@ -526,453 +488,171 @@ class ComprehensiveForexFactoryScraper:
                 "forecast": "",
                 "previous": "",
                 "details": {
-                    "source": "",
-                    "measures": "",
-                    "usual_effect": "",
-                    "frequency": "",
-                    "next_release": "",
-                    "ff_notes": "",
-                    "derived_via": "",
-                    "acro_expand": "",
-                    "also_called": "",
-                    "speaker": "",
-                    "description": "",
-                    "related_stories": [],
-                    "history": []
+                    "source": "", "measures": "", "usual_effect": "", "frequency": "",
+                    "next_release": "", "ff_notes": "", "derived_via": "", "acro_expand": "",
+                    "also_called": "", "speaker": "", "description": "",
+                    "related_stories": [], "history": []
                 }
             }
             
-            if row_index >= len(all_rows):
-                self.log_error(f"Row index {row_index} out of range, total rows: {len(all_rows)}")
-                return None
+            # Extract basic data using optimized selectors
+            event_data = self.extract_basic_data(row_element, event_data)
             
-            row_element = all_rows[row_index]
-            event_data = self.extract_basic_event_data_from_element(driver, row_element, event_data)
-            
+            # Extract details if event exists
             if event_data["event"] or event_data["currency"]:
                 self.log_info(f"Extracting details for event: {event_data.get('event', 'Unknown')}")
-                event_data = self.extract_details_using_hash_fragment(driver, row_element, event_data)
+                event_data = self.extract_details(driver, row_element, event_data)
             
             return event_data
         
         except Exception as e:
-            self.log_error(f"Error extracting detailed event data for row {row_index}: {e}")
+            self.log_error(f"Error extracting event data for row {row_index}: {e}")
             return None
     
-    def extract_basic_event_data_from_element(self, driver: Driver, row_element, event_data: Dict[str, Any]) -> Dict[str, Any]:
+    def extract_basic_data(self, row_element, event_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Optimized basic data extraction using only the most reliable selectors"""
         try:
-            # Time extraction
-            time_selectors = [
-                ".calendar__time span",
-                ".calendar__time",
-                "[class*='time']",
-                "td:nth-child(2)",
-                "td:first-child"
-            ]
-            for selector in time_selectors:
-                time_elem = row_element.select(selector)
-                if getattr(time_elem, 'text', '').strip():
-                    time_text = time_elem.text.strip()
-                    if time_text and time_text != "All Day":
-                        event_data["time"] = time_text
-                        break
+            # Time - use most reliable selector
+            time_elem = row_element.select(".calendar__time")
+            if time_elem and getattr(time_elem, 'text', '').strip():
+                time_text = time_elem.text.strip()
+                if time_text and time_text != "All Day":
+                    event_data["time"] = time_text
             
-            # Currency extraction
-            currency_selectors = [
-                ".calendar__currency span",
-                ".calendar__currency",
-                "[class*='currency']",
-                "td:nth-child(3)",
-                "td:nth-child(2)"
-            ]
-            for selector in currency_selectors:
-                currency_elem = row_element.select(selector)
-                if getattr(currency_elem, 'text', '').strip():
-                    currency_text = currency_elem.text.strip()
-                    if currency_text and len(currency_text) <= 3:
-                        event_data["currency"] = currency_text
-                        break
+            # Currency - use most reliable selector
+            currency_elem = row_element.select(".calendar__currency")
+            if currency_elem and getattr(currency_elem, 'text', '').strip():
+                currency_text = currency_elem.text.strip()
+                if currency_text and len(currency_text) <= 3:
+                    event_data["currency"] = currency_text
             
-            # Impact extraction
-            impact_selectors = [
-                ".calendar__impact span",
-                ".calendar__impact",
-                "[class*='impact']",
-                "td:nth-child(4)"
-            ]
-            for selector in impact_selectors:
-                impact_elem = row_element.select(selector)
-                if impact_elem:
-                    class_name = (impact_elem.get_attribute("class") or "").lower()
-                    if "ff-impact-red" in class_name:
-                        event_data["impact"] = "High"
-                        break
-                    elif "ff-impact-ora" in class_name:
-                        event_data["impact"] = "Medium"
-                        break
-                    else:
-                        event_data["impact"] = "Low"
-                        break
+            # Impact - use most reliable selector
+            impact_elem = row_element.select(".calendar__impact")
+            if impact_elem:
+                class_name = (impact_elem.get_attribute("class") or "").lower()
+                if "ff-impact-red" in class_name:
+                    event_data["impact"] = "High"
+                elif "ff-impact-ora" in class_name:
+                    event_data["impact"] = "Medium"
             
-            # Event name extraction
-            event_selectors = [
-                ".calendar__event .calendar__event-title",
-                ".calendar__event",
-                "[class*='event']",
-                "td:nth-child(5)",
-                "td:nth-child(4)"
-            ]
-            for selector in event_selectors:
-                event_elem = row_element.select(selector)
-                if getattr(event_elem, 'text', '').strip():
-                    event_text = event_elem.text.strip()
-                    if event_text and len(event_text) > 2:
-                        event_data["event"] = event_text
-                        break
+            # Event name - use most reliable selector
+            event_elem = row_element.select(".calendar__event")
+            if event_elem and getattr(event_elem, 'text', '').strip():
+                event_text = event_elem.text.strip()
+                if event_text and len(event_text) > 2:
+                    event_data["event"] = event_text
             
-            # Actual, Forecast, Previous extraction
-            self._extract_numeric_data(row_element, event_data)
-            
-            return event_data
-        except Exception as e:
-            self.log_error(f"Error extracting basic event data: {e}")
-            return event_data
-    
-    def _extract_numeric_data(self, row_element, event_data):
-        # Actual
-        actual_selectors = [".calendar__actual span", ".calendar__actual", "[class*='actual']"]
-        for selector in actual_selectors:
-            actual_elem = row_element.select(selector)
-            if getattr(actual_elem, 'text', '').strip():
+            # Numeric data - use most reliable selectors
+            actual_elem = row_element.select(".calendar__actual")
+            if actual_elem and getattr(actual_elem, 'text', '').strip():
                 event_data["actual"] = actual_elem.text.strip()
-                break
-        
-        # Forecast
-        forecast_selectors = [".calendar__forecast span", ".calendar__forecast", "[class*='forecast']"]
-        for selector in forecast_selectors:
-            forecast_elem = row_element.select(selector)
-            if getattr(forecast_elem, 'text', '').strip():
+            
+            forecast_elem = row_element.select(".calendar__forecast")
+            if forecast_elem and getattr(forecast_elem, 'text', '').strip():
                 event_data["forecast"] = forecast_elem.text.strip()
-                break
-        
-        # Previous
-        previous_selectors = [".calendar__previous span", ".calendar__previous", "[class*='previous']"]
-        for selector in previous_selectors:
-            previous_elem = row_element.select(selector)
-            if getattr(previous_elem, 'text', '').strip():
+            
+            previous_elem = row_element.select(".calendar__previous")
+            if previous_elem and getattr(previous_elem, 'text', '').strip():
                 event_data["previous"] = previous_elem.text.strip()
-                break
-    
-    def extract_details_using_hash_fragment(self, driver: Driver, row_element, event_data: Dict[str, Any]) -> Dict[str, Any]:
-        try:
-            # Find detail link with more comprehensive selectors
-            detail_selectors = [
-                "a.calendar__detail-link",
-                "a[title*='Detail']",
-                "a[class*='detail']",
-                ".calendar__detail",
-                "a[href*='#detail']",
-                "a[onclick*='detail']",
-                "a[data-action*='detail']",
-                "a[class*='expand']",
-                "a[class*='more']",
-                "a[title*='More']",
-                "a[title*='Expand']",
-                ".calendar__row a",
-                "td a",
-                "a"
-            ]
-            
-            detail_link = None
-            for selector in detail_selectors:
-                try:
-                    detail_link = row_element.select(selector)
-                    if detail_link:
-                        self.log_info(f"Found detail link using selector: {selector}")
-                        break
-                except Exception:
-                    continue
-            
-            if detail_link:
-                event_id = row_element.get_attribute("data-event-id")
-                if event_id:
-                    self.log_info(f"Found event ID: {event_id} for event: {event_data.get('event', 'Unknown')}")
-                    
-                    try:
-                        self.log_info(f"Clicking detail link for event: {event_data.get('event', 'Unknown')}")
-                        detail_link.click()
-                        time.sleep(3)
-                        
-                        event_data = self.extract_details_from_detail_pane(driver, event_data)
-                        
-                        detail_link.click()
-                        time.sleep(2)
-                        
-                    except Exception as click_error:
-                        self.log_error(f"Error clicking detail link: {click_error}")
-                        # Fallback to hash fragment
-                        current_url = driver.current_url
-                        detail_url = f"{current_url}#detail={event_id}"
-                        self.log_info(f"Trying hash fragment URL: {detail_url}")
-                        
-                        driver.get(detail_url)
-                        time.sleep(5)
-                        
-                        try:
-                            driver.wait_for_element("div.half.details", timeout=10)
-                            self.log_info("Detail pane loaded successfully")
-                        except:
-                            self.log_info("Detail pane not found, trying alternative selectors")
-                        
-                        event_data = self.extract_details_from_detail_pane(driver, event_data)
-                        driver.get(current_url)
-                        time.sleep(2)
-                else:
-                    self.log_error(f"No event ID found for event: {event_data.get('event', 'Unknown')}")
-                    # Try to extract details anyway
-                    self.log_info(f"Trying to extract details without event ID for: {event_data.get('event', 'Unknown')}")
-                    event_data = self.extract_details_from_detail_pane(driver, event_data)
-            else:
-                self.log_info(f"No detail link found for event: {event_data.get('event', 'Unknown')}")
-                # Try to extract details anyway - maybe they're already visible
-                self.log_info(f"Trying to extract details without detail link for: {event_data.get('event', 'Unknown')}")
-                event_data = self.extract_details_from_detail_pane(driver, event_data)
             
             return event_data
             
         except Exception as e:
-            self.log_error(f"Error extracting details using hash fragment: {e}")
-            # Try to extract details anyway as fallback
-            try:
-                self.log_info(f"Fallback: Trying to extract details for: {event_data.get('event', 'Unknown')}")
-                event_data = self.extract_details_from_detail_pane(driver, event_data)
-            except Exception as fallback_error:
-                self.log_error(f"Fallback detail extraction also failed: {fallback_error}")
+            self.log_error(f"Error extracting basic data: {e}")
             return event_data
     
-    def extract_details_from_detail_pane(self, driver: Driver, event_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract detailed information from the loaded detail pane - OPTIMIZED VERSION"""
+    def extract_details(self, driver: Driver, row_element, event_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Optimized detail extraction using only direct clicking"""
         try:
-            self.log_info(f"STARTING DETAIL EXTRACTION for event: {event_data.get('event', 'Unknown')}")
+            # Find and click detail link
+            detail_link = row_element.select("a.calendar__detail-link")
+            if not detail_link:
+                return event_data
             
-            # Get current page URL for debugging
-            current_url = driver.current_url
-            self.log_info(f"Current URL: {current_url}")
+            event_id = row_element.get_attribute("data-event-id")
+            if event_id:
+                self.log_info(f"Found event ID: {event_id} for event: {event_data.get('event', 'Unknown')}")
             
-            # Wait a bit for any dynamic content to load
+            # Click detail link and extract
+            detail_link.click()
             time.sleep(2)
             
-            # METHOD 1: Look for detail panes using the original working approach
-            self.log_info(f"METHOD 1: Looking for detail panes...")
-            detail_panes = driver.select_all("div.half.details")
+            event_data = self.extract_detail_fields(driver, event_data)
             
-            if detail_panes:
-                self.log_info(f"METHOD 1 SUCCESS: Found {len(detail_panes)} detail panes")
-                
-                # Get the most recent detail pane (last one in the list)
-                pane = detail_panes[-1]
-                self.log_info(f"Processing the most recent detail pane")
-                
-                # Find the calendarspecs table within this pane
-                specs_tables = pane.select_all("table.calendarspecs")
-                
-                if specs_tables:
-                    self.log_info(f"Found {len(specs_tables)} specs tables in detail pane")
-                    
-                    for table_idx, table in enumerate(specs_tables):
-                        # Get all rows in the specs table
-                        spec_rows = table.select_all("tr")
-                        self.log_info(f"Table {table_idx + 1}: Found {len(spec_rows)} rows")
-                        
-                        for row_idx, row in enumerate(spec_rows):
-                            # Get the spec name and description cells
-                            spec_cells = row.select_all("td")
-                            
-                            if len(spec_cells) >= 2:
-                                spec_name = spec_cells[0].text.strip()
-                                spec_value = spec_cells[1].text.strip()
-                                
-                                self.log_info(f"Row {row_idx + 1}: Found spec: '{spec_name}' = '{spec_value}'")
-                                
-                                # Map spec names to our fields using original logic
-                                if "Source" in spec_name:
-                                    event_data["details"]["source"] = spec_value
-                                    self.log_info(f"Mapped to source: {spec_value}")
-                                elif "Measures" in spec_name:
-                                    event_data["details"]["measures"] = spec_value
-                                    self.log_info(f"Mapped to measures: {spec_value}")
-                                elif "Usual Effect" in spec_name:
-                                    event_data["details"]["usual_effect"] = spec_value
-                                    self.log_info(f"Mapped to usual_effect: {spec_value}")
-                                elif "Frequency" in spec_name:
-                                    event_data["details"]["frequency"] = spec_value
-                                    self.log_info(f"Mapped to frequency: {spec_value}")
-                                elif "Next Release" in spec_name:
-                                    event_data["details"]["next_release"] = spec_value
-                                    self.log_info(f"Mapped to next_release: {spec_value}")
-                                elif "FF Notes" in spec_name:
-                                    event_data["details"]["ff_notes"] = spec_value
-                                    self.log_info(f"Mapped to ff_notes: {spec_value}")
-                                elif "Why Traders" in spec_name or "Care" in spec_name:
-                                    if not event_data["details"]["ff_notes"]:
-                                        event_data["details"]["ff_notes"] = spec_value
-                                    else:
-                                        event_data["details"]["ff_notes"] += f" | {spec_value}"
-                                    self.log_info(f"Added to ff_notes: {spec_value}")
-                                elif "Derived Via" in spec_name:
-                                    event_data["details"]["derived_via"] = spec_value
-                                    self.log_info(f"Mapped to derived_via: {spec_value}")
-                                elif "Acro Expand" in spec_name:
-                                    event_data["details"]["acro_expand"] = spec_value
-                                    self.log_info(f"Mapped to acro_expand: {spec_value}")
-                                elif "Also Called" in spec_name:
-                                    event_data["details"]["also_called"] = spec_value
-                                    self.log_info(f"Mapped to also_called: {spec_value}")
-                                elif "Speaker" in spec_name:
-                                    event_data["details"]["speaker"] = spec_value
-                                    self.log_info(f"Mapped to speaker: {spec_value}")
-                                elif "Description" in spec_name:
-                                    event_data["details"]["description"] = spec_value
-                                    self.log_info(f"Mapped to description: {spec_value}")
-                                else:
-                                    self.log_info(f"Unmapped spec: '{spec_name}' = '{spec_value}'")
-                else:
-                    self.log_info(f"No specs tables found in detail pane")
-            else:
-                self.log_info(f"METHOD 1 FAILED: No detail panes found")
-                
-                # METHOD 2: Try alternative selectors for detail panes
-                self.log_info(f"METHOD 2: Trying alternative detail panes...")
-                alternative_panes = driver.select_all("div.details")
-                if alternative_panes:
-                    self.log_info(f"METHOD 2 SUCCESS: Found {len(alternative_panes)} alternative detail panes")
-                    
-                    for pane_idx, pane in enumerate(alternative_panes):
-                        specs_tables = pane.select_all("table.calendarspecs")
-                        for table in specs_tables:
-                            spec_rows = table.select_all("tr")
-                            for row in spec_rows:
-                                spec_cells = row.select_all("td")
-                                if len(spec_cells) >= 2:
-                                    spec_name = spec_cells[0].text.strip()
-                                    spec_value = spec_cells[1].text.strip()
-                                    self.log_info(f"Found spec: '{spec_name}' = '{spec_value}'")
-                                    
-                                    # Map spec names to our fields (same logic as above)
-                                    if "Source" in spec_name:
-                                        event_data["details"]["source"] = spec_value
-                                    elif "Measures" in spec_name:
-                                        event_data["details"]["measures"] = spec_value
-                                    elif "Usual Effect" in spec_name:
-                                        event_data["details"]["usual_effect"] = spec_value
-                                    elif "Frequency" in spec_name:
-                                        event_data["details"]["frequency"] = spec_value
-                                    elif "Next Release" in spec_name:
-                                        event_data["details"]["next_release"] = spec_value
-                                    elif "FF Notes" in spec_name:
-                                        event_data["details"]["ff_notes"] = spec_value
-                                    elif "Why Traders" in spec_name or "Care" in spec_name:
-                                        if not event_data["details"]["ff_notes"]:
-                                            event_data["details"]["ff_notes"] = spec_value
-                                        else:
-                                            event_data["details"]["ff_notes"] += f" | {spec_value}"
-                                    elif "Derived Via" in spec_name:
-                                        event_data["details"]["derived_via"] = spec_value
-                                    elif "Acro Expand" in spec_name:
-                                        event_data["details"]["acro_expand"] = spec_value
-                                    elif "Also Called" in spec_name:
-                                        event_data["details"]["also_called"] = spec_value
-                                    elif "Speaker" in spec_name:
-                                        event_data["details"]["speaker"] = spec_value
-                                    elif "Description" in spec_name:
-                                        event_data["details"]["description"] = spec_value
-                else:
-                    self.log_info(f"METHOD 2 FAILED: No alternative detail panes found")
-            
-            # METHOD 3: Also try to find specs tables anywhere on the page
-            if not self._has_details(event_data):
-                self.log_info(f"METHOD 3: Looking for specs tables anywhere on page...")
-                all_specs_tables = driver.select_all("table.calendarspecs")
-                if all_specs_tables:
-                    self.log_info(f"METHOD 3 SUCCESS: Found {len(all_specs_tables)} specs tables on page")
-                    
-                    for table in all_specs_tables:
-                        spec_rows = table.select_all("tr")
-                        
-                        for row in spec_rows:
-                            spec_cells = row.select_all("td")
-                            
-                            if len(spec_cells) >= 2:
-                                spec_name = spec_cells[0].text.strip()
-                                spec_value = spec_cells[1].text.strip()
-                                
-                                self.log_info(f"Found spec: '{spec_name}' = '{spec_value}'")
-                                
-                                # Map spec names to our fields (same logic as above)
-                                if "Source" in spec_name:
-                                    event_data["details"]["source"] = spec_value
-                                elif "Measures" in spec_name:
-                                    event_data["details"]["measures"] = spec_value
-                                elif "Usual Effect" in spec_name:
-                                    event_data["details"]["usual_effect"] = spec_value
-                                elif "Frequency" in spec_name:
-                                    event_data["details"]["frequency"] = spec_value
-                                elif "Next Release" in spec_name:
-                                    event_data["details"]["next_release"] = spec_value
-                                elif "FF Notes" in spec_name:
-                                    event_data["details"]["ff_notes"] = spec_value
-                                elif "Why Traders" in spec_name or "Care" in spec_name:
-                                    if not event_data["details"]["ff_notes"]:
-                                        event_data["details"]["ff_notes"] = spec_value
-                                    else:
-                                        event_data["details"]["ff_notes"] += f" | {spec_value}"
-                                elif "Derived Via" in spec_name:
-                                    event_data["details"]["derived_via"] = spec_value
-                                elif "Acro Expand" in spec_name:
-                                    event_data["details"]["acro_expand"] = spec_value
-                                elif "Also Called" in spec_name:
-                                    event_data["details"]["also_called"] = spec_value
-                                elif "Speaker" in spec_name:
-                                    event_data["details"]["speaker"] = spec_value
-                                elif "Description" in spec_name:
-                                    event_data["details"]["description"] = spec_value
-                else:
-                    self.log_info(f"METHOD 3 FAILED: No specs tables found on page")
-            
-            # Final summary
-            final_detail_count = self._count_details(event_data)
-            
-            self.log_info(f"DETAIL EXTRACTION SUMMARY for {event_data.get('event', 'Unknown')}:")
-            self.log_info(f"Final details: {final_detail_count}")
-            
-            # Log final details state
-            details = event_data.get("details", {})
-            non_empty_details = {k: v for k, v in details.items() if v}
-            self.log_info(f"Final details: {non_empty_details}")
-            
-            if final_detail_count > 0:
-                self.log_info(f"SUCCESS: Detail extraction completed!")
-            else:
-                self.log_info(f"FAILURE: No details extracted from any method")
+            # Close detail pane
+            detail_link.click()
+            time.sleep(1)
             
             return event_data
+            
         except Exception as e:
-            self.log_error(f"Error extracting details from detail pane: {e}")
+            self.log_error(f"Error extracting details: {e}")
             return event_data
     
-    def _has_details(self, event_data: Dict[str, Any]) -> bool:
-        """Check if event has any details"""
-        details = event_data.get("details", {})
-        return any(v for v in details.values() if v)
-    
-    def _count_details(self, event_data: Dict[str, Any]) -> int:
-        """Count how many detail fields have values"""
-        details = event_data.get("details", {})
-        return sum(1 for v in details.values() if v and v != "")
+    def extract_detail_fields(self, driver: Driver, event_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Ultra-optimized detail field extraction"""
+        try:
+            # Wait for content to load
+            time.sleep(1)
+            
+            # Extract from specs tables
+            all_specs_tables = driver.select_all("table.calendarspecs")
+            
+            if all_specs_tables:
+                self.log_info(f"Found {len(all_specs_tables)} specs tables on page")
+                
+                for table in all_specs_tables:
+                    spec_rows = table.select_all("tr")
+                    
+                    for row in spec_rows:
+                        spec_cells = row.select_all("td")
+                        
+                        if len(spec_cells) >= 2:
+                            spec_name = spec_cells[0].text.strip()
+                            spec_value = spec_cells[1].text.strip()
+                            
+                            # Map spec names to fields
+                            if "Source" in spec_name:
+                                event_data["details"]["source"] = spec_value
+                            elif "Measures" in spec_name:
+                                event_data["details"]["measures"] = spec_value
+                            elif "Usual Effect" in spec_name:
+                                event_data["details"]["usual_effect"] = spec_value
+                            elif "Frequency" in spec_name:
+                                event_data["details"]["frequency"] = spec_value
+                            elif "Next Release" in spec_name:
+                                event_data["details"]["next_release"] = spec_value
+                            elif "FF Notes" in spec_name:
+                                event_data["details"]["ff_notes"] = spec_value
+                            elif "Why Traders" in spec_name or "Care" in spec_name:
+                                if not event_data["details"]["ff_notes"]:
+                                    event_data["details"]["ff_notes"] = spec_value
+                                else:
+                                    event_data["details"]["ff_notes"] += f" | {spec_value}"
+                            elif "Derived Via" in spec_name:
+                                event_data["details"]["derived_via"] = spec_value
+                            elif "Acro Expand" in spec_name:
+                                event_data["details"]["acro_expand"] = spec_value
+                            elif "Also Called" in spec_name:
+                                event_data["details"]["also_called"] = spec_value
+                            elif "Speaker" in spec_name:
+                                event_data["details"]["speaker"] = spec_value
+                            elif "Description" in spec_name:
+                                event_data["details"]["description"] = spec_value
+            
+            # Log extraction summary
+            detail_count = sum(1 for v in event_data["details"].values() if v and v != "")
+            self.log_info(f"Extracted {detail_count} detail fields for {event_data.get('event', 'Unknown')}")
+            
+            return event_data
+            
+        except Exception as e:
+            self.log_error(f"Error extracting detail fields: {e}")
+            return event_data
 
 # Global instances
 redis_db = RedisDatabase()
-scraper = ComprehensiveForexFactoryScraper()
+scraper = ComprehensiveScraper()
 
 # Browser decorator for scraping
 @browser(
@@ -1067,10 +747,21 @@ async def health_check():
     try:
         # Test Redis connection
         redis_db.client.ping()
-        return {"status": "healthy", "redis": "connected", "timestamp": datetime.now().isoformat()}
+        return {
+            "status": "healthy", 
+            "redis": "connected", 
+            "timestamp": datetime.now().isoformat(),
+            "message": "Backend is running and Redis is connected"
+        }
     except Exception as e:
         logger.error(f"Health check failed: {e}")
-        return {"status": "unhealthy", "redis": "disconnected", "error": str(e), "timestamp": datetime.now().isoformat()}
+        return {
+            "status": "unhealthy", 
+            "redis": "disconnected", 
+            "error": str(e), 
+            "timestamp": datetime.now().isoformat(),
+            "message": "Backend is running but Redis connection failed"
+        }
 
 @app.get("/events", response_model=EventsResponse)
 async def get_events(
@@ -1119,10 +810,22 @@ async def get_events(
                 # Convert missing dates to datetime objects
                 missing_date_objects = [datetime.strptime(d, "%Y-%m-%d") for d in missing_dates]
                 
-                # Scrape only specific missing dates
-                scraped_events = scrape_forex_data(data={'dates_to_scrape': missing_date_objects})
-                
-                logger.info(f"SCRAPED: {len(scraped_events)} events for missing dates")
+                # Add timeout for scraping operation
+                import asyncio
+                try:
+                    # Run scraping with timeout
+                    loop = asyncio.get_event_loop()
+                    scraped_events = await asyncio.wait_for(
+                        loop.run_in_executor(None, lambda: scrape_forex_data(data={'dates_to_scrape': missing_date_objects})),
+                        timeout=300  # 5 minute timeout
+                    )
+                    logger.info(f"SCRAPED: {len(scraped_events)} events for missing dates")
+                except asyncio.TimeoutError:
+                    logger.error("Scraping operation timed out after 5 minutes")
+                    scraped_events = []
+                except Exception as scrape_error:
+                    logger.error(f"Scraping error: {scrape_error}")
+                    scraped_events = []
                 
                 # ALWAYS process ALL missing dates, even if no events were found
                 # Initialize scraped_by_date with empty arrays for all missing dates

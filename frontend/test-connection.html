@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Forex Calendar - Connection Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .test-section { margin: 20px 0; padding: 20px; border-radius: 8px; border: 1px solid #ccc; background: white; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .info { background-color: #d1ecf1; border-color: #bee5eb; }
+        .warning { background-color: #fff3cd; border-color: #ffeaa7; }
+        button { padding: 12px 24px; margin: 5px; cursor: pointer; border: none; border-radius: 4px; font-weight: bold; }
+        .btn-primary { background-color: #007bff; color: white; }
+        .btn-secondary { background-color: #6c757d; color: white; }
+        .btn-success { background-color: #28a745; color: white; }
+        .btn-danger { background-color: #dc3545; color: white; }
+        .btn-warning { background-color: #ffc107; color: black; }
+        pre { background-color: #f8f9fa; padding: 15px; overflow-x: auto; border-radius: 4px; font-size: 12px; }
+        .test-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .test-status { font-weight: bold; padding: 5px 10px; border-radius: 4px; }
+        .status-pending { background-color: #e9ecef; color: #495057; }
+        .status-success { background-color: #d4edda; color: #155724; }
+        .status-error { background-color: #f8d7da; color: #721c24; }
+        .summary { background-color: #e7f3ff; border: 2px solid #007bff; padding: 20px; border-radius: 8px; margin: 20px 0; }
+        .loading { display: inline-block; width: 20px; height: 20px; border: 3px solid #f3f3f3; border-top: 3px solid #3498db; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Forex Calendar - Backend Connection Test Suite</h1>
+        <p><strong>Backend URL:</strong> <span id="backendUrl">http://localhost:8003</span></p>
+        
+        <div class="summary" id="testSummary" style="display: none;">
+            <h3>📊 Test Summary</h3>
+            <div id="summaryContent"></div>
+        </div>
+        
+        <div class="test-section info">
+            <div class="test-header">
+                <h3>🏥 Backend Health Check</h3>
+                <span id="healthStatus" class="test-status status-pending">Pending</span>
+            </div>
+            <button class="btn-primary" onclick="testHealth()">Test Health</button>
+            <div id="healthResult"></div>
+        </div>
+        
+        <div class="test-section info">
+            <div class="test-header">
+                <h3>📅 Test August 11, 2025 (Single Day)</h3>
+                <span id="august11Status" class="test-status status-pending">Pending</span>
+            </div>
+            <button class="btn-secondary" onclick="testAugust11()">Test August 11, 2025</button>
+            <div id="august11Result"></div>
+        </div>
+        
+        <div class="test-section info">
+            <div class="test-header">
+                <h3>📅 Test August 11-12, 2025 (Two Days)</h3>
+                <span id="august11to12Status" class="test-status status-pending">Pending</span>
+            </div>
+            <button class="btn-secondary" onclick="testAugust11to12()">Test August 11-12, 2025</button>
+            <div id="august11to12Result"></div>
+        </div>
+        
+        <div class="test-section info">
+            <div class="test-header">
+                <h3>📅 Test August 11-14, 2025 (Four Days)</h3>
+                <span id="august11to14Status" class="test-status status-pending">Pending</span>
+            </div>
+            <button class="btn-secondary" onclick="testAugust11to14()">Test August 11-14, 2025</button>
+            <div id="august11to14Result"></div>
+        </div>
+        
+        <div class="test-section info">
+            <div class="test-header">
+                <h3>📄 Test Original Data (Non-paraphrased)</h3>
+                <span id="originalStatus" class="test-status status-pending">Pending</span>
+            </div>
+            <button class="btn-warning" onclick="testOriginalData()">Test Original Data</button>
+            <div id="originalResult"></div>
+        </div>
+        
+        <div class="test-section info">
+            <div class="test-header">
+                <h3>🗄️ Database Information</h3>
+                <span id="databaseStatus" class="test-status status-pending">Pending</span>
+            </div>
+            <button class="btn-success" onclick="testDatabaseInfo()">Get Database Info</button>
+            <div id="databaseResult"></div>
+        </div>
+        
+        <div class="test-section warning">
+            <div class="test-header">
+                <h3>🚀 Run All Tests</h3>
+                <span id="allTestsStatus" class="test-status status-pending">Pending</span>
+            </div>
+            <button class="btn-danger" onclick="runAllTests()">Run Complete Test Suite</button>
+            <div id="allTestsResult"></div>
+        </div>
+    </div>
+
+    <script>
+        const baseUrl = 'http://localhost:8003';
+        const testResults = {
+            health: { status: 'pending', data: null },
+            august11: { status: 'pending', data: null },
+            august11to12: { status: 'pending', data: null },
+            august11to14: { status: 'pending', data: null },
+            original: { status: 'pending', data: null },
+            database: { status: 'pending', data: null }
+        };
+        
+        async function makeRequest(url, options = {}) {
+            try {
+                const timeoutPromise = new Promise((_, reject) => {
+                    setTimeout(() => reject(new Error('Request timeout after 30 seconds')), 30000);
+                });
+                
+                const fetchPromise = fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        ...options.headers
+                    },
+                    ...options
+                });
+                
+                return await Promise.race([fetchPromise, timeoutPromise]);
+            } catch (error) {
+                throw error;
+            }
+        }
+        
+        function updateStatus(testName, status, data = null) {
+            testResults[testName] = { status, data };
+            const statusElement = document.getElementById(`${testName}Status`);
+            if (statusElement) {
+                statusElement.className = `test-status status-${status}`;
+                statusElement.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+            }
+            updateSummary();
+        }
+        
+        function updateSummary() {
+            const summary = document.getElementById('testSummary');
+            const content = document.getElementById('summaryContent');
+            
+            const passed = Object.values(testResults).filter(r => r.status === 'success').length;
+            const failed = Object.values(testResults).filter(r => r.status === 'error').length;
+            const pending = Object.values(testResults).filter(r => r.status === 'pending').length;
+            const total = Object.keys(testResults).length;
+            
+            content.innerHTML = `
+                <p><strong>Total Tests:</strong> ${total}</p>
+                <p><strong>✅ Passed:</strong> ${passed}</p>
+                <p><strong>❌ Failed:</strong> ${failed}</p>
+                <p><strong>⏳ Pending:</strong> ${pending}</p>
+                <p><strong>Success Rate:</strong> ${total > 0 ? Math.round((passed / total) * 100) : 0}%</p>
+            `;
+            
+            summary.style.display = 'block';
+        }
+        
+        async function testHealth() {
+            const resultDiv = document.getElementById('healthResult');
+            resultDiv.innerHTML = '<p><span class="loading"></span> Testing...</p>';
+            updateStatus('health', 'pending');
+            
+            try {
+                const response = await makeRequest(`${baseUrl}/health`);
+                const data = await response.json();
+                
+                resultDiv.innerHTML = `
+                    <div class="success">
+                        <h4>✅ Health Check Successful</h4>
+                        <p><strong>Status:</strong> ${data.status}</p>
+                        <p><strong>Redis:</strong> ${data.redis}</p>
+                        <p><strong>Timestamp:</strong> ${data.timestamp}</p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    </div>
+                `;
+                updateStatus('health', 'success', data);
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ Health Check Failed</h4>
+                        <p><strong>Error:</strong> ${error.message}</p>
+                        <p>Make sure the backend is running on port 8003</p>
+                    </div>
+                `;
+                updateStatus('health', 'error', error);
+            }
+        }
+        
+        async function testAugust11() {
+            const resultDiv = document.getElementById('august11Result');
+            resultDiv.innerHTML = '<p><span class="loading"></span> Testing...</p>';
+            updateStatus('august11', 'pending');
+            
+            try {
+                const response = await makeRequest(`${baseUrl}/events?start=2025-08-11&end=2025-08-11`);
+                const data = await response.json();
+                
+                resultDiv.innerHTML = `
+                    <div class="success">
+                        <h4>✅ August 11, 2025 Data Retrieved</h4>
+                        <p><strong>Status:</strong> ${data.success}</p>
+                        <p><strong>Total Events:</strong> ${data.total_events}</p>
+                        <p><strong>Source:</strong> ${data.source}</p>
+                        <p><strong>Processing Time:</strong> ${data.processing_time_ms}ms</p>
+                        <p><strong>Data Type:</strong> Paraphrased</p>
+                        <h5>Sample Events:</h5>
+                        <pre>${JSON.stringify(data.data.slice(0, 3), null, 2)}</pre>
+                    </div>
+                `;
+                updateStatus('august11', 'success', data);
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ August 11, 2025 Test Failed</h4>
+                        <p><strong>Error:</strong> ${error.message}</p>
+                    </div>
+                `;
+                updateStatus('august11', 'error', error);
+            }
+        }
+        
+        async function testAugust11to12() {
+            const resultDiv = document.getElementById('august11to12Result');
+            resultDiv.innerHTML = '<p><span class="loading"></span> Testing...</p>';
+            updateStatus('august11to12', 'pending');
+            
+            try {
+                const response = await makeRequest(`${baseUrl}/events?start=2025-08-11&end=2025-08-12`);
+                const data = await response.json();
+                
+                resultDiv.innerHTML = `
+                    <div class="success">
+                        <h4>✅ August 11-12, 2025 Data Retrieved</h4>
+                        <p><strong>Status:</strong> ${data.success}</p>
+                        <p><strong>Total Events:</strong> ${data.total_events}</p>
+                        <p><strong>Source:</strong> ${data.source}</p>
+                        <p><strong>Processing Time:</strong> ${data.processing_time_ms}ms</p>
+                        <p><strong>Data Type:</strong> Paraphrased</p>
+                        <h5>Sample Events:</h5>
+                        <pre>${JSON.stringify(data.data.slice(0, 3), null, 2)}</pre>
+                    </div>
+                `;
+                updateStatus('august11to12', 'success', data);
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ August 11-12, 2025 Test Failed</h4>
+                        <p><strong>Error:</strong> ${error.message}</p>
+                    </div>
+                `;
+                updateStatus('august11to12', 'error', error);
+            }
+        }
+        
+        async function testAugust11to14() {
+            const resultDiv = document.getElementById('august11to14Result');
+            resultDiv.innerHTML = '<p><span class="loading"></span> Testing...</p>';
+            updateStatus('august11to14', 'pending');
+            
+            try {
+                const response = await makeRequest(`${baseUrl}/events?start=2025-08-11&end=2025-08-14`);
+                const data = await response.json();
+                
+                resultDiv.innerHTML = `
+                    <div class="success">
+                        <h4>✅ August 11-14, 2025 Data Retrieved</h4>
+                        <p><strong>Status:</strong> ${data.success}</p>
+                        <p><strong>Total Events:</strong> ${data.total_events}</p>
+                        <p><strong>Source:</strong> ${data.source}</p>
+                        <p><strong>Processing Time:</strong> ${data.processing_time_ms}ms</p>
+                        <p><strong>Data Type:</strong> Paraphrased</p>
+                        <h5>Sample Events:</h5>
+                        <pre>${JSON.stringify(data.data.slice(0, 3), null, 2)}</pre>
+                    </div>
+                `;
+                updateStatus('august11to14', 'success', data);
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ August 11-14, 2025 Test Failed</h4>
+                        <p><strong>Error:</strong> ${error.message}</p>
+                    </div>
+                `;
+                updateStatus('august11to14', 'error', error);
+            }
+        }
+        
+        async function testOriginalData() {
+            const resultDiv = document.getElementById('originalResult');
+            resultDiv.innerHTML = '<p><span class="loading"></span> Testing...</p>';
+            updateStatus('original', 'pending');
+            
+            try {
+                const response = await makeRequest(`${baseUrl}/events/original?start=2025-08-11&end=2025-08-11`);
+                const data = await response.json();
+                
+                resultDiv.innerHTML = `
+                    <div class="success">
+                        <h4>✅ Original Data Retrieved</h4>
+                        <p><strong>Status:</strong> ${data.success}</p>
+                        <p><strong>Total Events:</strong> ${data.total_events}</p>
+                        <p><strong>Source:</strong> ${data.source}</p>
+                        <p><strong>Processing Time:</strong> ${data.processing_time_ms}ms</p>
+                        <p><strong>Data Type:</strong> Original (Non-paraphrased)</p>
+                        <h5>Sample Events:</h5>
+                        <pre>${JSON.stringify(data.data.slice(0, 3), null, 2)}</pre>
+                    </div>
+                `;
+                updateStatus('original', 'success', data);
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ Original Data Test Failed</h4>
+                        <p><strong>Error:</strong> ${error.message}</p>
+                    </div>
+                `;
+                updateStatus('original', 'error', error);
+            }
+        }
+        
+        async function testDatabaseInfo() {
+            const resultDiv = document.getElementById('databaseResult');
+            resultDiv.innerHTML = '<p><span class="loading"></span> Testing...</p>';
+            updateStatus('database', 'pending');
+            
+            try {
+                const response = await makeRequest(`${baseUrl}/database/info`);
+                const data = await response.json();
+                
+                resultDiv.innerHTML = `
+                    <div class="success">
+                        <h4>✅ Database Info Retrieved</h4>
+                        <p><strong>Total Keys:</strong> ${data.total_keys || 0}</p>
+                        <p><strong>Redis Version:</strong> ${data.redis_version || 'N/A'}</p>
+                        <p><strong>Connected Clients:</strong> ${data.connected_clients || 'N/A'}</p>
+                        <p><strong>Used Memory:</strong> ${data.used_memory_human || 'N/A'}</p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    </div>
+                `;
+                updateStatus('database', 'success', data);
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ Database Info Test Failed</h4>
+                        <p><strong>Error:</strong> ${error.message}</p>
+                    </div>
+                `;
+                updateStatus('database', 'error', error);
+            }
+        }
+        
+        async function runAllTests() {
+            const resultDiv = document.getElementById('allTestsResult');
+            resultDiv.innerHTML = '<p><span class="loading"></span> Running all tests...</p>';
+            updateStatus('allTests', 'pending');
+            
+            // Reset all statuses
+            Object.keys(testResults).forEach(key => {
+                updateStatus(key, 'pending');
+            });
+            
+            try {
+                // Run all tests sequentially
+                await testHealth();
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                await testAugust11();
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                await testAugust11to12();
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                await testAugust11to14();
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                await testOriginalData();
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                await testDatabaseInfo();
+                
+                // Final summary
+                const passed = Object.values(testResults).filter(r => r.status === 'success').length;
+                const total = Object.keys(testResults).length;
+                
+                resultDiv.innerHTML = `
+                    <div class="${passed === total ? 'success' : 'warning'}">
+                        <h4>🎯 Test Suite Complete</h4>
+                        <p><strong>Results:</strong> ${passed}/${total} tests passed</p>
+                        <p><strong>Success Rate:</strong> ${Math.round((passed / total) * 100)}%</p>
+                        ${passed === total ? 
+                            '<p>🎉 All tests passed! Backend is fully operational.</p>' : 
+                            '<p>⚠️ Some tests failed. Check individual test results above.</p>'
+                        }
+                    </div>
+                `;
+                updateStatus('allTests', passed === total ? 'success' : 'error');
+                
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ Test Suite Failed</h4>
+                        <p><strong>Error:</strong> ${error.message}</p>
+                    </div>
+                `;
+                updateStatus('allTests', 'error');
+            }
+        }
+        
+        // Auto-test on page load
+        window.addEventListener('load', () => {
+            console.log('Page loaded, running auto-tests...');
+            setTimeout(testHealth, 1000);
+        });
+    </script>
+</body>
+</html>
+
